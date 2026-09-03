@@ -1,0 +1,21 @@
+{
+    "sampling_rate": 16000,
+    "num_samples": 32000,
+    "duration_seconds": 2.0,
+    "signal_type": "multi_tone",
+    "frequencies_hz": [
+        200.0,
+        440.0,
+        1000.0
+    ],
+    "amplitudes": [
+        1.0,
+        0.7,
+        0.4
+    ],
+    "phases_rad": [
+        0.0,
+        0.0,
+        0.0
+    ]
+}

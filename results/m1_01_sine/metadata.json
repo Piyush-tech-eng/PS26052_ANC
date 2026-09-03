@@ -1,0 +1,9 @@
+{
+    "sampling_rate": 16000,
+    "num_samples": 32000,
+    "duration_seconds": 2.0,
+    "signal_type": "sine",
+    "frequency_hz": 440.0,
+    "amplitude": 1.0,
+    "phase_rad": 0.0
+}

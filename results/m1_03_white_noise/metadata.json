@@ -1,0 +1,10 @@
+{
+    "sampling_rate": 16000,
+    "num_samples": 32000,
+    "duration_seconds": 2.0,
+    "measured_mean": 0.008615731176873503,
+    "measured_std": 1.003700449313767,
+    "signal_type": "white_noise",
+    "std": 1.0,
+    "seed": 42
+}

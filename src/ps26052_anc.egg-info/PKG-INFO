@@ -1,0 +1,6 @@
+Metadata-Version: 2.4
+Name: ps26052-anc
+Version: 0.1.0
+Summary: AI-driven Adaptive Noise Cancellation for Defence Communications
+Requires-Python: >=3.10
+Requires-Dist: numpy>=1.26

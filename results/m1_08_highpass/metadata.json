@@ -1,0 +1,22 @@
+{
+    "experiment": "m1_08_highpass",
+    "sampling_rate": 16000,
+    "duration_seconds": 1.0,
+    "num_samples": 16000,
+    "low_frequency_hz": 500.0,
+    "high_frequency_hz": 4000.0,
+    "low_amplitude": 1.0,
+    "high_amplitude": 0.5,
+    "filter_type": "first_order_difference_highpass",
+    "coefficients": [
+        -1.0,
+        1.0
+    ],
+    "input_low_amplitude": 1.0000000000000013,
+    "input_high_amplitude": 0.5000000000000003,
+    "output_low_amplitude": 0.19594781293517555,
+    "output_high_amplitude": 0.7070453459708056,
+    "low_frequency_gain": 0.1959478129351753,
+    "high_frequency_gain": 1.4140906919416103,
+    "verification": "high_frequency_gain > low_frequency_gain"
+}

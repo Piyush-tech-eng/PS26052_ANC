@@ -1,0 +1,29 @@
+{
+    "experiment": "m1_08_impulse_response",
+    "sampling_rate": 16000,
+    "input_length": 320,
+    "filter_length": 6,
+    "impulse_index": 0,
+    "impulse_amplitude": 1.0,
+    "verification": "output[:filter_length] matches impulse_response",
+    "input_metadata": {
+        "signal_type": "impulse",
+        "impulse_index": 0,
+        "amplitude": 1.0
+    },
+    "output_metadata": {
+        "signal_type": "impulse",
+        "impulse_index": 0,
+        "amplitude": 1.0,
+        "filter_type": "fir",
+        "fir_coefficients": [
+            0.1,
+            0.2,
+            0.35,
+            0.2,
+            0.1,
+            0.05
+        ],
+        "fir_length": 6
+    }
+}
