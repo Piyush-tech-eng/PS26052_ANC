@@ -1,0 +1,28 @@
+{
+  "module": "M2.09",
+  "purpose": "Compare the Wiener-estimated FIR coefficient vector with the known Module 1 FIR system.",
+  "equation": "h_true compared with w_opt",
+  "input_files": {
+    "true_impulse_response": "C:\\Users\\Piyush\\Projects\\PS26052_ANC\\results\\m1_handoff\\system_impulse_response.npy",
+    "wiener_coefficients": "C:\\Users\\Piyush\\Projects\\PS26052_ANC\\results\\m2_06_wiener_solution\\wiener_coefficients.npy"
+  },
+  "true_filter_length": 7,
+  "estimated_filter_length": 32,
+  "comparison_length": 32,
+  "alignment": "Shorter causal impulse response zero-padded to the length of the longer response.",
+  "metrics": {
+    "coefficient_mse": 8.059968986121038e-10,
+    "coefficient_rmse": 2.8390084512239547e-05,
+    "relative_l2_error": 0.00030350276978959295,
+    "coefficient_correlation": 0.9999999735556039,
+    "true_l2_norm": 0.5291502622129182,
+    "estimated_l2_norm": 0.5290329607039442,
+    "error_l2_norm": 0.0001605985702165101,
+    "maximum_absolute_coefficient_error": 6.3349495842413e-05
+  },
+  "output_files": {
+    "true_impulse_response": "true_impulse_response.npy",
+    "estimated_impulse_response": "estimated_impulse_response.npy",
+    "coefficient_error": "coefficient_error.npy"
+  }
+}

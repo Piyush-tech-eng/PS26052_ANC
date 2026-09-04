@@ -1,0 +1,21 @@
+{
+  "module": "M2.07",
+  "equation": "d_hat[n] = sum_k w_opt[k] x[n-k]",
+  "error_equation": "e[n] = d[n] - d_hat[n]",
+  "sampling_rate_hz": 16000,
+  "num_samples": 80000,
+  "filter_length": 32,
+  "metrics": {
+    "mse": 2.621558489297297e-08,
+    "rmse": 0.00016191227530046315,
+    "normalized_correlation": 0.9999999782584498,
+    "desired_power": 0.2812331160149755,
+    "residual_power": 2.621558489297297e-08,
+    "relative_mse": 9.32165644801837e-08,
+    "explained_power_fraction": 0.9999999067834355
+  },
+  "files": {
+    "estimated_desired": "estimated_desired.npy",
+    "error": "error.npy"
+  }
+}

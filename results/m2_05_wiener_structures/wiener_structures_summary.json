@@ -1,0 +1,23 @@
+{
+  "module": "M2.05",
+  "filter_length": 32,
+  "sampling_rate_hz": 16000,
+  "num_samples": 80000,
+  "matrix": {
+    "shape": [
+      32,
+      32
+    ],
+    "symmetric": true
+  },
+  "vector": {
+    "shape": [
+      32
+    ]
+  },
+  "equation": "R @ w_opt = p",
+  "files": {
+    "correlation_matrix": "correlation_matrix.npy",
+    "cross_correlation_vector": "cross_correlation_vector.npy"
+  }
+}

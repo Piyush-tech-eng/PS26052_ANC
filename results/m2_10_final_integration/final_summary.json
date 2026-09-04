@@ -1,0 +1,79 @@
+{
+  "module": "M2.10",
+  "status": "PASS",
+  "purpose": "Final reproducible end-to-end Wiener/MMSE integration experiment.",
+  "configuration": {
+    "sampling_rate_hz": 16000.0,
+    "num_samples": 80000,
+    "duration_seconds": 5.0,
+    "filter_length": 7
+  },
+  "mathematical_pipeline": [
+    "x[n]",
+    "d[n]",
+    "Rxx[k]",
+    "Rxd[k]",
+    "R",
+    "p",
+    "w_opt",
+    "d_hat[n]",
+    "e[n]",
+    "MSE"
+  ],
+  "signal_metrics": {
+    "desired_power": 0.2812331160149755,
+    "estimate_power": 0.2812331160149757,
+    "error_power_mse": 1.5441109771831927e-31,
+    "relative_error_power": 5.490501968839859e-31,
+    "explained_power_fraction": 1.0,
+    "desired_estimate_correlation": 0.9999999999999999
+  },
+  "wiener_equation": {
+    "residual_l2_norm": 1.2869730969111293e-16,
+    "relative_residual": 2.421481805667231e-16
+  },
+  "orthogonality": {
+    "maximum_absolute_residual": 2.7933545397430796e-16,
+    "l2_norm": 3.864536496751814e-16
+  },
+  "system_comparison": {
+    "comparison_length": 7,
+    "coefficient_mse": 2.124025595809923e-32,
+    "coefficient_rmse": 1.4574037175092984e-16,
+    "relative_l2_error": 7.287018587546488e-16,
+    "coefficient_correlation": 1.0,
+    "maximum_absolute_error": 2.7755575615628914e-16
+  },
+  "acceptance": {
+    "all_values_finite": true,
+    "correlation_matrix_symmetric": true,
+    "autocorrelation_zero_lag_matches_power": true,
+    "correlation_structure_consistent": true,
+    "cross_correlation_structure_consistent": true,
+    "wiener_equation_satisfied": true,
+    "error_identity_satisfied": true
+  },
+  "outputs": [
+    "reference_x.npy",
+    "desired_d.npy",
+    "autocorrelation_rxx.npy",
+    "cross_correlation_rxd.npy",
+    "correlation_matrix_R.npy",
+    "cross_correlation_vector_p.npy",
+    "wiener_coefficients.npy",
+    "estimated_desired_d_hat.npy",
+    "error_e.npy",
+    "true_impulse_response.npy",
+    "estimated_impulse_response.npy",
+    "coefficient_error.npy",
+    "orthogonality_vector.npy",
+    "reference_waveform.png",
+    "desired_waveform.png",
+    "desired_vs_estimate.png",
+    "error_waveform.png",
+    "autocorrelation.png",
+    "cross_correlation.png",
+    "wiener_coefficients.png",
+    "true_vs_estimated_system.png"
+  ]
+}

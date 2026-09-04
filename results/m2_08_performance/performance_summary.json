@@ -1,0 +1,61 @@
+{
+  "module": "M2.08",
+  "filter_length": 32,
+  "sampling_rate_hz": 16000,
+  "num_samples": 80000,
+  "power_analysis": {
+    "desired_power": 0.2812331160149755,
+    "estimated_desired_power": 0.28110768074216735,
+    "error_power": 2.621558489297297e-08,
+    "relative_error_power": 9.32165644801837e-08,
+    "explained_power_fraction": 0.9999999067834355
+  },
+  "orthogonality_analysis": {
+    "equation": "E[e[n] x[n-k]] = 0",
+    "maximum_absolute_value": 6.406015052186225e-05,
+    "rms_value": 2.8869959617737148e-05,
+    "lags_evaluated": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31
+    ]
+  },
+  "input_files": {
+    "desired": "m1_handoff/desired.npy",
+    "estimated_desired": "m2_07_wiener_application/estimated_desired.npy",
+    "error": "m2_07_wiener_application/error.npy"
+  },
+  "output_files": {
+    "orthogonality_lags": "orthogonality_lags.npy",
+    "error_reference_correlation": "error_reference_correlation.npy"
+  }
+}

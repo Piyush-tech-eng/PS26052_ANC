@@ -1,0 +1,23 @@
+{
+  "module": "M2.06",
+  "equation": "R @ w_opt = p",
+  "filter_length": 32,
+  "solution": {
+    "finite": true,
+    "minimum_coefficient": -3.993847750453869e-05,
+    "maximum_coefficient": 0.2999366505041576,
+    "l2_norm": 0.5290329607039442
+  },
+  "numerical_validation": {
+    "residual_l2_norm": 2.528870977718221e-16,
+    "relative_residual": 4.756226357524995e-16,
+    "condition_number": 1.075119231093432
+  },
+  "input_files": {
+    "correlation_matrix": "m2_05_wiener_structures/correlation_matrix.npy",
+    "cross_correlation_vector": "m2_05_wiener_structures/cross_correlation_vector.npy"
+  },
+  "output_files": {
+    "wiener_coefficients": "wiener_coefficients.npy"
+  }
+}

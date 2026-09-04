@@ -1,0 +1,25 @@
+{
+  "module": "M2.02",
+  "source_dataset": "module_1_to_module_2_handoff",
+  "sampling_rate_hz": 16000,
+  "num_samples": 80000,
+  "duration_seconds": 5.0,
+  "reference_x_n": {
+    "mean": -0.0020480232388985025,
+    "variance": 1.0056727954024989,
+    "rms": 1.0028344777687324,
+    "average_power": 1.005676989801686
+  },
+  "desired_d_n": {
+    "mean": -0.0027232756265224618,
+    "variance": 0.2812256997848375,
+    "rms": 0.5303141672772618,
+    "average_power": 0.2812331160149755
+  },
+  "relationships": {
+    "reference_power_equals_variance_plus_mean_squared": true,
+    "desired_power_equals_variance_plus_mean_squared": true,
+    "reference_rms_squared_equals_power": false,
+    "desired_rms_squared_equals_power": false
+  }
+}

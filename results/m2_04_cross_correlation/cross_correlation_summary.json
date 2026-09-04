@@ -1,0 +1,20 @@
+{
+  "module": "M2.04",
+  "reference_signal": "x[n]",
+  "desired_signal": "d[n]",
+  "sampling_rate_hz": 16000,
+  "num_samples": 80000,
+  "max_lag": 200,
+  "estimator_default": "biased",
+  "convention": "Rxd[k] = (1/N) * sum(d[n] * x[n-k])",
+  "lag_zero": {
+    "cross_correlation": 0.09993345656626919,
+    "mean_product": 0.09993345656626919,
+    "matches": true
+  },
+  "files": {
+    "lags": "lags.npy",
+    "biased": "cross_correlation_biased.npy",
+    "unbiased": "cross_correlation_unbiased.npy"
+  }
+}

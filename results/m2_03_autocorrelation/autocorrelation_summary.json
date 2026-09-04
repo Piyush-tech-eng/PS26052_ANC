@@ -1,0 +1,17 @@
+{
+  "module": "M2.03",
+  "signal": "reference x[n]",
+  "sampling_rate_hz": 16000,
+  "num_samples": 80000,
+  "max_lag": 200,
+  "estimator_default": "biased",
+  "lag_zero": {
+    "autocorrelation": 1.005676989801686,
+    "mean_square": 1.005676989801686
+  },
+  "files": {
+    "lags": "lags.npy",
+    "biased": "autocorrelation_biased.npy",
+    "unbiased": "autocorrelation_unbiased.npy"
+  }
+}

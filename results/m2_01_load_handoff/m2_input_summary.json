@@ -1,0 +1,30 @@
+{
+  "module": "M2.01",
+  "source_dataset": "module_1_to_module_2_handoff",
+  "sampling_rate_hz": 16000,
+  "num_samples": 80000,
+  "duration_seconds": 5.0,
+  "reference": {
+    "symbol": "x[n]",
+    "file": "reference.npy",
+    "shape": [
+      80000
+    ],
+    "dtype": "float64"
+  },
+  "desired": {
+    "symbol": "d[n]",
+    "file": "desired.npy",
+    "shape": [
+      80000
+    ],
+    "dtype": "float64"
+  },
+  "validation": {
+    "reference_and_desired_same_length": true,
+    "reference_samples_finite": true,
+    "desired_samples_finite": true,
+    "sampling_rate_valid": true,
+    "metadata_num_samples_matches": true
+  }
+}
