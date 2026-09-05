@@ -1,0 +1,43 @@
+{
+  "format": "ps26052-anc-secondary-path-model",
+  "format_version": 1,
+  "sampling_rate_hz": 8000,
+  "filter_length": 16,
+  "identification_config": {
+    "filter_length": 16,
+    "step_size": 0.35,
+    "algorithm": "nlms",
+    "epsilon": 1e-08,
+    "sampling_rate_hz": 8000,
+    "learning_window": 256,
+    "experiment_seed": 26052
+  },
+  "validation_metrics": {
+    "impulse_response_error": [
+      4.39819155422363e-18,
+      -3.542478364562884e-18,
+      -1.1102230246251565e-16,
+      0.0,
+      -1.3877787807814457e-17,
+      -2.7755575615628914e-17,
+      -1.23966139104905e-17,
+      -1.9245152181607932e-17,
+      1.2432404867102396e-17,
+      -1.7141418491879332e-17,
+      -1.6053403847214605e-17,
+      -9.854337380691262e-18,
+      -3.4470076496791634e-19,
+      2.917047353347053e-18,
+      -6.183861159191365e-18,
+      -6.882266509096631e-18
+    ],
+    "impulse_response_rmse": 3.035447676118689e-17,
+    "relative_impulse_error": 2.0734759377923705e-16,
+    "magnitude_response_rmse_db": 2.2594412935316944e-15,
+    "phase_response_rmse_radians": 1.1477059451951755e-16
+  },
+  "metadata": {
+    "source": "synthetic-secondary-path-identification",
+    "true_path_used_only_for": "post-identification validation"
+  }
+}

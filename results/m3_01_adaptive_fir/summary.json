@@ -1,0 +1,15 @@
+{
+    "module": "M3.01",
+    "experiment": "Adaptive FIR core causal processing",
+    "num_samples": 80000,
+    "filter_length": 16,
+    "adaptation_enabled": false,
+    "reference_path": "C:\\Users\\Piyush\\Projects\\PS26052_ANC\\results\\m1_handoff\\reference.npy",
+    "output_mean": -0.0021083804423322966,
+    "output_std": 0.24877911463169428,
+    "input_vector_shape": [
+        80000,
+        16
+    ],
+    "final_coefficients_changed": false
+}

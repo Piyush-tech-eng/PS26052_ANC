@@ -1,0 +1,125 @@
+{
+  "module": "M4",
+  "experiment": "Digital feedforward ANC plant",
+  "sign_convention": "d = P*x; y = W*x; y_s = S*y; e = d + y_s",
+  "sampling_rate_hz": 8000,
+  "primary_path_length": 5,
+  "secondary_path_length": 5,
+  "algorithm_comparison": {
+    "no_control": {
+      "config": {
+        "filter_length": 32,
+        "step_size": 0.25,
+        "algorithm": "none",
+        "epsilon": 1e-08,
+        "sampling_rate_hz": 8000,
+        "learning_window": 256
+      },
+      "initial_error_power": 0.7568893864291026,
+      "final_error_power": 0.7421874978824179,
+      "within_run_error_power_ratio": 0.9805759086990948,
+      "final_power_vs_no_control": 0.9999999999999997,
+      "attenuation_db_vs_no_control": 0.0
+    },
+    "lms_baseline": {
+      "config": {
+        "filter_length": 32,
+        "step_size": 0.005,
+        "algorithm": "lms",
+        "epsilon": 1e-08,
+        "sampling_rate_hz": 8000,
+        "learning_window": 256
+      },
+      "initial_error_power": 12.604881565775683,
+      "final_error_power": 3.299391954965833e+41,
+      "within_run_error_power_ratio": 2.6175509367134576e+40,
+      "final_power_vs_no_control": 4.445496541479796e+41,
+      "attenuation_db_vs_no_control": -416.47920276708027
+    },
+    "nlms_baseline": {
+      "config": {
+        "filter_length": 32,
+        "step_size": 0.1,
+        "algorithm": "nlms",
+        "epsilon": 1e-08,
+        "sampling_rate_hz": 8000,
+        "learning_window": 256
+      },
+      "initial_error_power": 3.3639095996375854,
+      "final_error_power": 3.3284440476264562e+25,
+      "within_run_error_power_ratio": 9.894570436687865e+24,
+      "final_power_vs_no_control": 4.484640413807898e+25,
+      "attenuation_db_vs_no_control": -256.5172762629657
+    },
+    "fxlms": {
+      "config": {
+        "filter_length": 32,
+        "step_size": 0.005,
+        "algorithm": "fxlms",
+        "epsilon": 1e-08,
+        "sampling_rate_hz": 8000,
+        "learning_window": 256
+      },
+      "initial_error_power": 0.23022000252328187,
+      "final_error_power": 1.620830026686235e-10,
+      "within_run_error_power_ratio": 7.040352744858999e-10,
+      "final_power_vs_no_control": 2.183855200081822e-10,
+      "attenuation_db_vs_no_control": 96.607755658302
+    },
+    "fxnlms": {
+      "config": {
+        "filter_length": 32,
+        "step_size": 0.25,
+        "algorithm": "fxnlms",
+        "epsilon": 1e-08,
+        "sampling_rate_hz": 8000,
+        "learning_window": 256
+      },
+      "initial_error_power": 0.006760164577113525,
+      "final_error_power": 3.802153926252773e-18,
+      "within_run_error_power_ratio": 5.624351127670478e-16,
+      "final_power_vs_no_control": 5.122902146830737e-18,
+      "attenuation_db_vs_no_control": 155.16699772061915
+    }
+  },
+  "required_digital_anc_cases": {
+    "stationary_broadband": {
+      "initial_error_power": 0.006760164577113525,
+      "final_error_power": 3.802153926252773e-18,
+      "within_run_error_power_ratio": 5.624351127670478e-16,
+      "final_power_vs_no_control": 5.122902146830737e-18,
+      "attenuation_db_vs_no_control": 155.16699772061915
+    },
+    "colored_disturbance": {
+      "initial_error_power": 0.008506710251158877,
+      "final_error_power": 5.170040066766314e-07,
+      "within_run_error_power_ratio": 6.077602168313961e-05,
+      "final_power_vs_no_control": 3.2768797660913856e-07,
+      "attenuation_db_vs_no_control": 64.84539493091157
+    },
+    "tonal_disturbance": {
+      "initial_error_power": 0.0025672741684505383,
+      "final_error_power": 8.226947745125197e-28,
+      "within_run_error_power_ratio": 3.204545835511525e-25,
+      "final_power_vs_no_control": 1.4995279819167431e-27,
+      "attenuation_db_vs_no_control": 153.92843939028154
+    },
+    "controlled_delay": {
+      "initial_error_power": 0.007580582888280851,
+      "final_error_power": 3.705557359866869e-17,
+      "within_run_error_power_ratio": 4.888222204647799e-15,
+      "final_power_vs_no_control": 4.719190205832383e-17,
+      "attenuation_db_vs_no_control": 154.81518346228214
+    }
+  },
+  "acceptance": {
+    "error_signal_identity": true,
+    "secondary_path_is_applied": true,
+    "no_control_baseline_saved": true,
+    "fxlms_reduces_error": true,
+    "fxnlms_reduces_error": true,
+    "perfect_model_is_explicit": true,
+    "all_required_cases_reduce_error": true
+  },
+  "status": "PASS"
+}

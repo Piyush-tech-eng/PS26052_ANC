@@ -1,0 +1,23 @@
+{
+    "module": "M3.05",
+    "experiment": "LMS versus NLMS comparison",
+    "num_samples": 80000,
+    "filter_length": 32,
+    "lms": {
+        "step_size": 0.001,
+        "mse": 0.0017777966161322014,
+        "initial_error_power": 0.12521395171540992,
+        "final_error_power": 3.211066825657387e-30,
+        "error_power_ratio": 2.564464088599002e-29,
+        "final_coefficient_norm": 0.5291502622129169
+    },
+    "nlms": {
+        "step_size": 0.1,
+        "epsilon": 1e-08,
+        "mse": 0.0004006261230080532,
+        "initial_error_power": 0.032006237246725605,
+        "final_error_power": 3.1555745916434295e-31,
+        "error_power_ratio": 9.859248893639437e-30,
+        "final_coefficient_norm": 0.5291502622129178
+    }
+}

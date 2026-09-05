@@ -1,0 +1,15 @@
+{
+    "module": "M3.02",
+    "experiment": "LMS adaptive filtering on Module 1 handoff",
+    "num_samples": 80000,
+    "filter_length": 16,
+    "step_size": 0.001,
+    "mse": 0.0017648602829296834,
+    "rmse": 0.04201024021509141,
+    "initial_error_power": 0.1250264974742856,
+    "final_error_power": 3.19150327743055e-30,
+    "error_power_ratio": 2.5526615092828186e-29,
+    "final_coefficient_norm": 0.5291502622129169,
+    "reference_path": "C:\\Users\\Piyush\\Projects\\PS26052_ANC\\results\\m1_handoff\\reference.npy",
+    "desired_path": "C:\\Users\\Piyush\\Projects\\PS26052_ANC\\results\\m1_handoff\\desired.npy"
+}

@@ -1,0 +1,11 @@
+{
+    "module": "M3.03",
+    "initial_error_power": 0.1250264974742856,
+    "final_error_power": 3.19150327743055e-30,
+    "error_power_ratio": 2.5526615092828186e-29,
+    "maximum_coefficient_change": 0.0064169392171554655,
+    "final_coefficient_change": 4.2265174908673424e-18,
+    "coefficient_change_ratio": 6.586500740988395e-16,
+    "error_decreased": true,
+    "coefficients_stabilized": true
+}

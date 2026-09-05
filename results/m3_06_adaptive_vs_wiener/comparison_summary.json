@@ -1,0 +1,23 @@
+{
+    "module": "M3.06",
+    "experiment": "Adaptive coefficient convergence against Wiener benchmark",
+    "wiener_coefficients_path": "C:\\Users\\Piyush\\Projects\\PS26052_ANC\\results\\m2_06_wiener_solution\\wiener_coefficients.npy",
+    "filter_length": 32,
+    "lms": {
+        "initial_coefficient_error": 0.3434344289462132,
+        "final_coefficient_error": 0.00016059857021574642,
+        "coefficient_error_ratio": 0.00046762513213518956,
+        "minimum_coefficient_error": 0.00012201441202372754,
+        "minimum_error_index": 8422,
+        "moved_closer_to_wiener": true
+    },
+    "nlms": {
+        "initial_coefficient_error": 0.14976955694349797,
+        "final_coefficient_error": 0.0001605985702163051,
+        "coefficient_error_ratio": 0.0010723045022887545,
+        "minimum_coefficient_error": 0.00012838333877199378,
+        "minimum_error_index": 2446,
+        "moved_closer_to_wiener": true
+    },
+    "final_closer_algorithm": "LMS"
+}

@@ -1,0 +1,55 @@
+{
+    "module": "M3.04",
+    "filter_length": 16,
+    "runs": [
+        {
+            "step_size": 1e-05,
+            "stable": true,
+            "converged": true,
+            "mse": 0.1399178075499926,
+            "rmse": 0.3740558882707136,
+            "initial_error_power": 0.29885034543916444,
+            "final_error_power": 0.06173289485282517,
+            "error_power_ratio": 0.20656792202166552,
+            "final_coefficient_norm": 0.2922359821061016,
+            "reason": null
+        },
+        {
+            "step_size": 0.0001,
+            "stable": true,
+            "converged": true,
+            "mse": 0.01751562245369252,
+            "rmse": 0.13234659970581986,
+            "initial_error_power": 0.2720476741016758,
+            "final_error_power": 3.749756966677213e-08,
+            "error_power_ratio": 1.378345534127142e-07,
+            "final_coefficient_norm": 0.5289781875638644,
+            "reason": null
+        },
+        {
+            "step_size": 0.001,
+            "stable": true,
+            "converged": true,
+            "mse": 0.0017648602829296834,
+            "rmse": 0.04201024021509141,
+            "initial_error_power": 0.1250264974742856,
+            "final_error_power": 3.19150327743055e-30,
+            "error_power_ratio": 2.5526615092828186e-29,
+            "final_coefficient_norm": 0.5291502622129169,
+            "reason": null
+        },
+        {
+            "step_size": 0.01,
+            "stable": true,
+            "converged": true,
+            "mse": 0.000185575606708975,
+            "rmse": 0.013622613798716272,
+            "initial_error_power": 0.014846048514567344,
+            "final_error_power": 1.7881297320979676e-32,
+            "error_power_ratio": 1.2044482613291878e-30,
+            "final_coefficient_norm": 0.5291502622129182,
+            "reason": null
+        }
+    ],
+    "recommended_step_size": 0.01
+}
