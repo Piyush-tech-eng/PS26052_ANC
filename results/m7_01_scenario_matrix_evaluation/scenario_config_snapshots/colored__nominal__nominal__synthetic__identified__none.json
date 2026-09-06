@@ -1,0 +1,17 @@
+{
+  "config_snapshot": {
+    "filter_length": 32,
+    "learning_window": 256,
+    "secondary_path_model_artifact": "C:\\Users\\Piyush\\Projects\\PS26052_ANC\\results\\m5_01_secondary_path_identification\\secondary_path_model.npz"
+  },
+  "controller": "none",
+  "input_level": "nominal",
+  "path_condition": "nominal",
+  "provenance": {},
+  "run_id": "colored__nominal__nominal__synthetic__identified__none",
+  "scenario_id": "colored__nominal__nominal__synthetic__identified",
+  "secondary_path_model": "identified",
+  "seed": 26058,
+  "signal_class": "colored",
+  "source_type": "synthetic"
+}

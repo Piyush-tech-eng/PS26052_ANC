@@ -1,0 +1,63 @@
+{
+  "algorithms": {
+    "fxlms": {
+      "adaptation_attenuation_db": 15.273767249440713,
+      "attenuation_db_vs_no_control": 8.566013316320113,
+      "final_residual_power": 0.00036827934726458195,
+      "full_run_residual_power": 0.002271552822831856,
+      "initial_residual_power": 0.012403780997549563
+    },
+    "fxnlms": {
+      "adaptation_attenuation_db": 29.160777670419073,
+      "attenuation_db_vs_no_control": 23.514271193753768,
+      "final_residual_power": 2.0211242312405806e-06,
+      "full_run_residual_power": 7.269374657928322e-05,
+      "initial_residual_power": 0.0016659838073927488
+    },
+    "none": {
+      "adaptation_attenuation_db": -0.7861466810868668,
+      "attenuation_db_vs_no_control": 0.0,
+      "final_residual_power": 0.017142255942450182,
+      "full_run_residual_power": 0.01632766841267258,
+      "initial_residual_power": 0.014303861849475798
+    }
+  },
+  "module": "M6.06",
+  "scenario": {
+    "algorithms": {
+      "fxlms": {
+        "algorithm": "fxlms",
+        "filter_length": 32,
+        "step_size": 0.01
+      },
+      "fxnlms": {
+        "algorithm": "fxnlms",
+        "filter_length": 32,
+        "step_size": 0.05
+      },
+      "none": {
+        "algorithm": "none",
+        "filter_length": 32,
+        "step_size": 0.05
+      }
+    },
+    "duration_seconds": 4.0,
+    "paths": {
+      "identified_secondary_path_model": "results\\m5_01_secondary_path_identification\\secondary_path_model.npz",
+      "true_secondary_path_available": true
+    },
+    "provenance": {
+      "disturbance": "controlled primary path",
+      "reference": "synthetic:m6_06"
+    },
+    "sampling_rate_hz": 8000,
+    "scenario_id": "m6-06-synthetic-comparison",
+    "seed": 26052,
+    "source_type": "synthetic",
+    "timing": {
+      "alignment_applied": false,
+      "delay_samples": null
+    }
+  },
+  "status": "complete"
+}

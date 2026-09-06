@@ -1,0 +1,27 @@
+{
+  "module": "M6.03",
+  "experiment": "recorded_signal_replay_preparation",
+  "seed": 26052,
+  "sampling_rate_hz": 8000,
+  "duration_seconds": 4.0,
+  "known_delay_samples": 95,
+  "estimated_delay_samples": 95,
+  "alignment_applied": true,
+  "overlap_samples": 31905,
+  "reference": {
+    "source": "C:\\Users\\Piyush\\Projects\\PS26052_ANC\\results\\m6_03_recorded_signal_replay\\recorded_reference.npy",
+    "samples": 31905,
+    "duration_seconds": 3.988125
+  },
+  "measured": {
+    "source": "C:\\Users\\Piyush\\Projects\\PS26052_ANC\\results\\m6_03_recorded_signal_replay\\recorded_measured.npy",
+    "samples": 31905,
+    "duration_seconds": 3.988125
+  },
+  "acceptance": {
+    "delay_recovered": true,
+    "equal_length": true,
+    "finite_reference": true,
+    "finite_measured": true
+  }
+}

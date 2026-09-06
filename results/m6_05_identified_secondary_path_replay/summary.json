@@ -1,0 +1,24 @@
+{
+  "module": "M6.05",
+  "experiment": "identified_secondary_path_replay",
+  "seed": 26052,
+  "sampling_rate_hz": 8000,
+  "duration_seconds": 8.0,
+  "num_samples": 64000,
+  "algorithm": "fxnlms",
+  "filter_length": 32,
+  "step_size": 0.05,
+  "identified_model_source": "C:\\Users\\Piyush\\Projects\\PS26052_ANC\\results\\m5_01_secondary_path_identification\\secondary_path_estimate.npy",
+  "identified_model_length": 16,
+  "true_secondary_path_length": 6,
+  "initial_residual_power": 0.00027335193641337237,
+  "final_residual_power": 9.644625037896675e-07,
+  "residual_power_ratio": 0.0035282812203327146,
+  "attenuation_db": 24.52436806781698,
+  "acceptance": {
+    "identified_model_loaded": true,
+    "finite_residual": true,
+    "finite_coefficients": true,
+    "residual_power_reduced": true
+  }
+}

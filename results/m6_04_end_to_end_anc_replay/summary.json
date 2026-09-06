@@ -1,0 +1,22 @@
+{
+  "module": "M6.04",
+  "experiment": "end_to_end_anc_replay",
+  "seed": 26052,
+  "sampling_rate_hz": 8000,
+  "duration_seconds": 8.0,
+  "num_samples": 64000,
+  "algorithm": "fxnlms",
+  "filter_length": 32,
+  "step_size": 0.05,
+  "alignment_applied": false,
+  "delay_samples": null,
+  "initial_residual_power": 0.00032066898277261744,
+  "final_residual_power": 9.789272276720167e-07,
+  "residual_power_ratio": 0.0030527655628155483,
+  "attenuation_db": 25.153065459745605,
+  "acceptance": {
+    "finite_residual": true,
+    "finite_final_coefficients": true,
+    "residual_power_reduced": true
+  }
+}

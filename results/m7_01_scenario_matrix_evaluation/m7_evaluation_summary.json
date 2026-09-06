@@ -1,0 +1,12 @@
+{
+  "algorithms": [
+    "fxlms",
+    "fxnlms",
+    "none"
+  ],
+  "baseline_manifest": "benchmark_manifest.json",
+  "dataset_manifest": "dataset_manifest.json",
+  "run_count": 24,
+  "scenario_count": 8,
+  "window_count": 720
+}

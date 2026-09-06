@@ -1,0 +1,14 @@
+{
+  "fields": {
+    "baseline_residual": {
+      "mean": 0.0003457694161776636,
+      "std": 0.09573834379557793
+    },
+    "reference_x": {
+      "mean": 0.0003242804281755595,
+      "std": 0.1797404959291254
+    }
+  },
+  "format_version": 1,
+  "policy": "z-score; statistics derived from train split only"
+}

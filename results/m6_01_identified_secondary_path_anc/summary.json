@@ -1,0 +1,37 @@
+{
+    "module": "M6.01",
+    "experiment": "identified_secondary_path_anc",
+    "experiment_seed": 26052,
+    "sampling_rate_hz": 8000,
+    "duration_seconds": 8.0,
+    "num_samples": 64000,
+    "controller": {
+        "algorithm": "fxnlms",
+        "filter_length": 32,
+        "step_size": 0.2,
+        "epsilon": 1e-08
+    },
+    "identification": {
+        "algorithm": "nlms",
+        "filter_length": 7,
+        "step_size": 0.5
+    },
+    "secondary_path_validation": {
+        "impulse_response_rmse": 0.0014003072301204888,
+        "relative_impulse_error": 0.005983376025038081,
+        "magnitude_response_rmse_db": 0.04919430344350669,
+        "phase_response_rmse_radians": 0.0048669495502279055
+    },
+    "late_stage_results": {
+        "no_control_power_db": -25.4995219671503,
+        "perfect_model_power_db": -104.3575261564074,
+        "identified_model_power_db": -103.78145634336391,
+        "perfect_model_noise_reduction_db": 78.8580041892571,
+        "identified_model_noise_reduction_db": 78.28193437621363
+    },
+    "acceptance": {
+        "identified_error_is_finite": true,
+        "identified_coefficients_are_finite": true,
+        "identified_model_reduces_residual": true
+    }
+}

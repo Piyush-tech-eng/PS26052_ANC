@@ -1,0 +1,36 @@
+{
+  "algorithms": {
+    "fxlms": {
+      "algorithm": "fxlms",
+      "filter_length": 32,
+      "step_size": 0.01
+    },
+    "fxnlms": {
+      "algorithm": "fxnlms",
+      "filter_length": 32,
+      "step_size": 0.05
+    },
+    "none": {
+      "algorithm": "none",
+      "filter_length": 32,
+      "step_size": 0.05
+    }
+  },
+  "duration_seconds": 4.0,
+  "paths": {
+    "identified_secondary_path_model": "results\\m5_01_secondary_path_identification\\secondary_path_model.npz",
+    "true_secondary_path_available": true
+  },
+  "provenance": {
+    "disturbance": "controlled primary path",
+    "reference": "synthetic:m6_06"
+  },
+  "sampling_rate_hz": 8000,
+  "scenario_id": "m6-06-synthetic-comparison",
+  "seed": 26052,
+  "source_type": "synthetic",
+  "timing": {
+    "alignment_applied": false,
+    "delay_samples": null
+  }
+}

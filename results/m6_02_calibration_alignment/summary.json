@@ -1,0 +1,33 @@
+{
+  "module": "M6.02",
+  "experiment": "calibration_alignment",
+  "seed": 26052,
+  "sampling_rate_hz": 8000,
+  "num_samples": 24000,
+  "true_delay": {
+    "samples": 137,
+    "seconds": 0.017125
+  },
+  "estimated_delay": {
+    "samples": 137,
+    "seconds": 0.017125
+  },
+  "delay_error": {
+    "samples": 0,
+    "seconds": 0.0
+  },
+  "correlation": {
+    "before_alignment": 0.034179123558059445,
+    "after_alignment": 0.9981052337144156
+  },
+  "normalized_peak_correlation": 0.9981052337144156,
+  "alignment": {
+    "reference_start": 0,
+    "target_start": 137,
+    "overlap_samples": 23863
+  },
+  "acceptance": {
+    "delay_exactly_recovered": true,
+    "alignment_improved_correlation": true
+  }
+}
