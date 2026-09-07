@@ -31,6 +31,9 @@ class ScenarioDefinition:
     source_type: str
     controller: str
     secondary_path_model: str
+    speech_source_id: str | None = None
+    noise_family: str | None = None
+    snr_db: float | None = None
     config_snapshot: dict[str, Any] = field(default_factory=dict)
     seed: int | None = None
     provenance: dict[str, Any] = field(default_factory=dict)
@@ -39,8 +42,8 @@ class ScenarioDefinition:
         for name in ("scenario_id", "signal_class", "input_level", "path_condition", "source_type", "controller", "secondary_path_model"):
             if not isinstance(getattr(self, name), str) or not getattr(self, name).strip():
                 raise ValueError(f"{name} must be a non-empty string.")
-        if self.source_type not in {"synthetic", "recorded"}:
-            raise ValueError("source_type must be 'synthetic' or 'recorded'.")
+        if self.source_type not in {"synthetic", "recorded", "speech"}:
+            raise ValueError("source_type must be 'synthetic', 'recorded', or 'speech'.")
         if self.seed is not None and (not isinstance(self.seed, int) or isinstance(self.seed, bool)):
             raise TypeError("seed must be an integer or None.")
         object.__setattr__(self, "config_snapshot", dict(self.config_snapshot))
@@ -55,6 +58,7 @@ class ScenarioDefinition:
             "scenario_id": self.scenario_id, "run_id": self.run_id, "signal_class": self.signal_class,
             "input_level": self.input_level, "path_condition": self.path_condition, "source_type": self.source_type,
             "controller": self.controller, "secondary_path_model": self.secondary_path_model,
+            "speech_source_id": self.speech_source_id, "noise_family": self.noise_family, "snr_db": self.snr_db,
             "config_snapshot": self.config_snapshot, "seed": self.seed, "provenance": self.provenance,
         }
 
@@ -62,23 +66,44 @@ class ScenarioDefinition:
 def build_scenario_matrix(
     *, signal_classes: Iterable[str], input_levels: Iterable[str], path_conditions: Iterable[str],
     source_types: Iterable[str], controllers: Iterable[str], secondary_path_models: Iterable[str],
+    speech_source_ids: Iterable[str | None] = (None,), noise_families: Iterable[str | None] = (None,),
+    snr_dbs: Iterable[float | None] = (None,),
     config_snapshot: dict[str, Any] | None = None, seed: int | None = None,
 ) -> list[ScenarioDefinition]:
-    """Create a reproducible Cartesian scenario matrix; controllers share condition IDs."""
+    """Create a reproducible Cartesian scenario matrix; controllers share condition IDs.
 
-    axes = [list(axis) for axis in (signal_classes, input_levels, path_conditions, source_types, secondary_path_models, controllers)]
-    if any(not axis for axis in axes):
+    Seeds are derived from the *condition* index (signal_class × input_level ×
+    path_condition × source_type × secondary_path_model) so that every
+    controller variant of the same underlying scenario replays the identical
+    disturbance realization.
+    """
+
+    condition_axes = [list(axis) for axis in (signal_classes, input_levels, path_conditions, source_types, secondary_path_models, speech_source_ids, noise_families, snr_dbs)]
+    controller_list = list(controllers)
+    all_axes = condition_axes + [controller_list]
+    if any(not axis for axis in all_axes):
         raise ValueError("Every scenario axis must contain at least one value.")
     definitions: list[ScenarioDefinition] = []
-    for index, (signal_class, input_level, path_condition, source_type, model, controller) in enumerate(product(*axes)):
-        scenario_id = "__".join((_safe_id(str(signal_class)), _safe_id(str(input_level)), _safe_id(str(path_condition)), _safe_id(str(source_type)), _safe_id(str(model))))
+    num_controllers = len(controller_list)
+    for index, (signal_class, input_level, path_condition, source_type, model, speech_id, noise_fam, snr, controller) in enumerate(product(*all_axes)):
+        condition_index = index // num_controllers
+        scenario_id_parts = [_safe_id(str(signal_class)), _safe_id(str(input_level)), _safe_id(str(path_condition)), _safe_id(str(source_type)), _safe_id(str(model))]
+        if speech_id is not None:
+            scenario_id_parts.append(_safe_id(str(speech_id)))
+        if noise_fam is not None:
+            scenario_id_parts.append(_safe_id(str(noise_fam)))
+        if snr is not None:
+            scenario_id_parts.append(_safe_id(f"snr{snr}"))
+        scenario_id = "__".join(scenario_id_parts)
         definitions.append(ScenarioDefinition(
             scenario_id=scenario_id, signal_class=str(signal_class), input_level=str(input_level),
             path_condition=str(path_condition), source_type=str(source_type), controller=str(controller),
-            secondary_path_model=str(model), config_snapshot=dict(config_snapshot or {}),
-            seed=None if seed is None else seed + index,
+            secondary_path_model=str(model), speech_source_id=speech_id, noise_family=noise_fam, snr_db=snr,
+            config_snapshot=dict(config_snapshot or {}),
+            seed=None if seed is None else seed + condition_index,
         ))
     return definitions
+
 
 
 @dataclass(frozen=True)
