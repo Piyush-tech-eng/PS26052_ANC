@@ -1,4 +1,9 @@
-"""Reusable, source-agnostic metrics for the Module 7 ANC benchmark."""
+"""Reusable, source-agnostic metrics for the Module 7 ANC benchmark.
+
+When the ``pystoi`` and/or ``pesq`` packages are installed, the standard
+implementations are used automatically.  Otherwise, the built-in
+approximations serve as zero-dependency fallbacks.
+"""
 
 from __future__ import annotations
 
@@ -291,6 +296,57 @@ def compute_pesq_approx(
     return float(max(1.0, min(4.5, quality)))
 
 
+def compute_stoi_standard(
+    estimate: np.ndarray | list[float],
+    target: np.ndarray | list[float],
+    sampling_rate_hz: int,
+) -> tuple[float, str]:
+    """Compute STOI using ``pystoi`` if available, else the built-in approx.
+
+    Returns
+    -------
+    tuple of (float, str)
+        The STOI value and the source identifier (``'pystoi'`` or ``'approx'``).
+    """
+    try:
+        from pystoi import stoi as _stoi  # type: ignore[import-untyped]
+        est = np.asarray(estimate, dtype=np.float64).ravel()
+        ref = np.asarray(target, dtype=np.float64).ravel()
+        min_len = min(len(est), len(ref))
+        value = float(_stoi(ref[:min_len], est[:min_len], sampling_rate_hz, extended=False))
+        return (value, "pystoi")
+    except ImportError:
+        return (compute_stoi(estimate, target, sampling_rate_hz), "approx")
+
+
+def compute_pesq_standard(
+    estimate: np.ndarray | list[float],
+    target: np.ndarray | list[float],
+    sampling_rate_hz: int,
+) -> tuple[float, str]:
+    """Compute PESQ using the ``pesq`` package if available, else the approx.
+
+    Returns
+    -------
+    tuple of (float, str)
+        The PESQ MOS-LQO value and the source (``'pesq'`` or ``'approx'``).
+    """
+    try:
+        from pesq import pesq as _pesq  # type: ignore[import-untyped]
+        est = np.asarray(estimate, dtype=np.float64).ravel()
+        ref = np.asarray(target, dtype=np.float64).ravel()
+        min_len = min(len(est), len(ref))
+        # pesq supports 8000 or 16000 Hz only
+        mode = "wb" if sampling_rate_hz == 16000 else "nb"
+        value = float(_pesq(sampling_rate_hz, ref[:min_len], est[:min_len], mode))
+        return (value, "pesq")
+    except ImportError:
+        return (compute_pesq_approx(estimate, target, sampling_rate_hz), "approx")
+    except Exception:
+        # pesq can raise on very short or silent signals
+        return (compute_pesq_approx(estimate, target, sampling_rate_hz), "approx")
+
+
 def evaluate_scenario(
     residual: np.ndarray | list[float], *, sampling_rate_hz: int, baseline_residual: np.ndarray | list[float] | None = None,
     target: np.ndarray | list[float] | None = None, coefficient_history: np.ndarray | None = None,
@@ -334,7 +390,11 @@ def evaluate_scenario(
         metrics.update(mse)
         metrics["target_available"] = True
         metrics["si_snr_db"] = compute_si_snr(residual_array, target_array)
-        metrics["stoi"] = compute_stoi(residual_array, target_array, sampling_rate_hz)
-        metrics["pesq_approx"] = compute_pesq_approx(residual_array, target_array, sampling_rate_hz)
+        stoi_val, stoi_src = compute_stoi_standard(residual_array, target_array, sampling_rate_hz)
+        metrics["stoi"] = stoi_val
+        metrics["stoi_source"] = stoi_src
+        pesq_val, pesq_src = compute_pesq_standard(residual_array, target_array, sampling_rate_hz)
+        metrics["pesq_approx"] = pesq_val
+        metrics["pesq_source"] = pesq_src
     return metrics
 

@@ -1,21 +1,35 @@
 """Pretrained DTLN (Dual-signal Transformation LSTM Network) wrapper.
 
 DTLN is a lightweight dual-stage speech enhancement architecture:
-- Stage 1: LSTM in the STFT magnitude domain
-- Stage 2: LSTM in the time domain (learned basis)
+- Stage 1: LSTM in the STFT magnitude domain (257-bin mask estimation)
+- Stage 2: LSTM in the time domain (learned basis frame enhancement)
 
 Public pretrained weights are available from the original authors:
     https://github.com/breizhn/DTLN
 
-This wrapper loads a pretrained DTLN checkpoint (TensorFlow SavedModel or
-ONNX) and adapts it to the ``EnhancementModel`` interface.  The model
-operates on 16 kHz mono audio with a block length of 512 samples and a
-block shift of 128 samples.
+This wrapper loads pretrained DTLN ONNX checkpoints (``model_1.onnx`` and
+``model_2.onnx``) and adapts them to the ``EnhancementModel`` interface.
+The model operates on 16 kHz mono audio with a block length of 512 samples
+and a block shift of 128 samples.
+
+Model I/O (from the pretrained ONNX files)
+-------------------------------------------
+model_1.onnx — STFT magnitude domain:
+    Inputs:  input_2 [1,1,257]  (magnitude spectrum)
+             input_3 [1,2,128,2] (packed LSTM states)
+    Outputs: activation_2 [1,1,257]  (magnitude mask)
+             tf_op_layer_stack_2 [1,2,128,2] (updated states)
+
+model_2.onnx — time domain:
+    Inputs:  input_4 [1,1,512]  (estimated time-domain frame)
+             input_5 [1,2,128,2] (packed LSTM states)
+    Outputs: conv1d_3 [1,1,512]  (enhanced time-domain frame)
+             tf_op_layer_stack_5 [1,2,128,2] (updated states)
 
 Graceful degradation
 --------------------
-If neither TensorFlow nor ONNX Runtime is available, ``is_available()``
-returns ``False`` and the caller can fall back to another model.
+If ONNX Runtime is not installed, ``is_available()`` returns ``False``
+and the caller can fall back to another model.
 """
 
 from __future__ import annotations
@@ -33,40 +47,63 @@ from ai.models.base import EnhancementModel
 _DTLN_SAMPLE_RATE = 16_000
 _DTLN_BLOCK_LEN = 512
 _DTLN_BLOCK_SHIFT = 128
+_DTLN_FFT_SIZE = 512
+_DTLN_NUM_BINS = _DTLN_FFT_SIZE // 2 + 1  # 257
 
 
 def is_available() -> bool:
-    """Check if a DTLN runtime is available."""
+    """Check if a DTLN runtime (ONNX Runtime) is available."""
     try:
         import onnxruntime  # noqa: F401
         return True
     except ImportError:
-        pass
-    try:
-        import tensorflow  # noqa: F401
-        return True
-    except ImportError:
-        pass
-    return False
+        return False
 
 
 def _find_model_path() -> Path | None:
-    """Search standard locations for a pretrained DTLN checkpoint."""
+    """Search standard locations for a pretrained DTLN checkpoint directory.
+
+    Returns the first existing directory that contains at least one
+    ``.onnx`` file, or ``None`` if nothing is found.
+    """
     # Check environment variable first
     env_path = os.environ.get("DTLN_MODEL_PATH", "")
-    if env_path and Path(env_path).exists():
-        return Path(env_path)
+    if env_path:
+        p = Path(env_path)
+        if p.exists():
+            return p
 
-    # Check common relative paths
-    candidates = [
-        Path("models/dtln"),
-        Path("pretrained/dtln"),
-        Path.home() / ".cache" / "dtln",
-    ]
+    # Resolve repo root — walk up from this file until we hit a directory
+    # that contains pyproject.toml (works regardless of CWD).
+    _this_dir = Path(__file__).resolve().parent
+    repo_root: Path | None = None
+    for parent in [_this_dir, *_this_dir.parents]:
+        if (parent / "pyproject.toml").exists():
+            repo_root = parent
+            break
+
+    # Check common relative-to-repo paths and then user cache
+    candidates: list[Path] = []
+    if repo_root is not None:
+        candidates.append(repo_root / "models" / "dtln")
+        candidates.append(repo_root / "pretrained" / "dtln")
+    # CWD-relative (backward compat)
+    candidates.append(Path("models/dtln"))
+    candidates.append(Path("pretrained/dtln"))
+    candidates.append(Path.home() / ".cache" / "dtln")
+
+    seen: set[str] = set()
     for candidate in candidates:
+        resolved = str(candidate.resolve())
+        if resolved in seen:
+            continue
+        seen.add(resolved)
         if candidate.exists():
-            return candidate
-
+            # Verify it actually contains ONNX files
+            if candidate.is_dir() and list(candidate.glob("*.onnx")):
+                return candidate
+            elif candidate.is_file() and candidate.suffix == ".onnx":
+                return candidate
     return None
 
 
@@ -76,7 +113,8 @@ class DTLNModel(EnhancementModel):
     Parameters
     ----------
     model_path : str or Path, optional
-        Path to the pretrained DTLN model directory or ONNX file.
+        Path to the pretrained DTLN model directory containing
+        ``model_1.onnx`` and ``model_2.onnx``, or a single ONNX file.
         If not provided, searches standard locations and environment
         variable ``DTLN_MODEL_PATH``.
     target_sample_rate : int
@@ -93,48 +131,63 @@ class DTLNModel(EnhancementModel):
             raise ValueError("target_sample_rate must be positive.")
         self._target_rate = target_sample_rate
         self._model_path = Path(model_path) if model_path else _find_model_path()
-        self._session: Any = None  # Lazy-loaded ONNX or TF session
+        self._session: Any = None  # Lazy-loaded ONNX session dict
 
     def _ensure_session(self) -> None:
-        """Lazy-load the model on first use."""
+        """Lazy-load the ONNX sessions on first use."""
         if self._session is not None:
             return
 
         if self._model_path is None:
             raise FileNotFoundError(
-                "No DTLN model found. Set DTLN_MODEL_PATH or pass model_path."
+                "No DTLN model found. Set DTLN_MODEL_PATH or place "
+                "model_1.onnx + model_2.onnx in models/dtln/."
             )
 
-        # Try ONNX Runtime first (lighter weight)
-        onnx_files = list(self._model_path.glob("*.onnx")) if self._model_path.is_dir() else []
-        if self._model_path.suffix == ".onnx":
-            onnx_files = [self._model_path]
-
-        if onnx_files:
-            try:
-                import onnxruntime as ort
-                self._session = {
-                    "type": "onnx",
-                    "sessions": [
-                        ort.InferenceSession(str(f)) for f in sorted(onnx_files)[:2]
-                    ],
-                }
-                return
-            except ImportError:
-                pass
-
-        # Fall back to TensorFlow SavedModel
         try:
-            import tensorflow as tf
-            self._session = {
-                "type": "tensorflow",
-                "model": tf.saved_model.load(str(self._model_path)),
-            }
-            return
-        except (ImportError, Exception) as exc:
+            import onnxruntime as ort
+        except ImportError as exc:
             raise ImportError(
-                f"Cannot load DTLN model from {self._model_path}: {exc}"
+                "onnxruntime is required for DTLN inference. "
+                "Install with: pip install onnxruntime"
             ) from exc
+
+        # Locate ONNX files
+        if self._model_path.is_dir():
+            onnx_files = sorted(self._model_path.glob("*.onnx"))
+        elif self._model_path.suffix == ".onnx":
+            onnx_files = [self._model_path]
+        else:
+            raise FileNotFoundError(
+                f"No .onnx files found at {self._model_path}"
+            )
+
+        if len(onnx_files) < 2:
+            raise FileNotFoundError(
+                f"DTLN requires model_1.onnx and model_2.onnx, "
+                f"found: {[f.name for f in onnx_files]}"
+            )
+
+        # Create inference sessions
+        sessions = [ort.InferenceSession(str(f)) for f in onnx_files[:2]]
+
+        # Pre-allocate input dicts by inspecting model metadata
+        init_inputs = []
+        for sess in sessions:
+            inputs = {}
+            for inp in sess.get_inputs():
+                shape = [
+                    dim if isinstance(dim, int) else 1
+                    for dim in inp.shape
+                ]
+                inputs[inp.name] = np.zeros(shape, dtype=np.float32)
+            init_inputs.append(inputs)
+
+        self._session = {
+            "type": "onnx",
+            "sessions": sessions,
+            "init_inputs": init_inputs,
+        }
 
     # ------------------------------------------------------------------
     # EnhancementModel interface
@@ -178,11 +231,7 @@ class DTLNModel(EnhancementModel):
             x_16k = np.pad(x_16k, (0, pad_needed))
 
         # Process through DTLN
-        if self._session["type"] == "onnx":
-            output_16k = self._process_onnx(x_16k)
-        else:
-            output_16k = self._process_tensorflow(x_16k)
-
+        output_16k = self._process_onnx(x_16k)
         output_16k = output_16k[:num_16k]
 
         # Resample back
@@ -200,56 +249,66 @@ class DTLNModel(EnhancementModel):
         return output
 
     def _process_onnx(self, x: np.ndarray) -> np.ndarray:
-        """Process audio through ONNX Runtime sessions."""
-        import onnxruntime as ort  # noqa: F811
+        """Process audio through the two-stage DTLN ONNX pipeline.
 
+        Follows the reference implementation from breizhn/DTLN:
+        - Stage 1 (model_1): STFT magnitude → LSTM → magnitude mask
+        - Stage 2 (model_2): estimated time frame → LSTM → enhanced frame
+        """
         sessions = self._session["sessions"]
-        num_blocks = len(x) // _DTLN_BLOCK_SHIFT
-        output = np.zeros_like(x)
+        init_inputs = self._session["init_inputs"]
 
-        # Initialize hidden states
+        sess_1, sess_2 = sessions[0], sessions[1]
+        inp_names_1 = [inp.name for inp in sess_1.get_inputs()]
+        inp_names_2 = [inp.name for inp in sess_2.get_inputs()]
+
+        num_blocks = len(x) // _DTLN_BLOCK_SHIFT
+        output = np.zeros(len(x), dtype=np.float32)
+
+        # Sliding input buffer for overlap
         in_buffer = np.zeros(_DTLN_BLOCK_LEN, dtype=np.float32)
         out_buffer = np.zeros(_DTLN_BLOCK_LEN, dtype=np.float32)
 
-        # DTLN typically uses 2 ONNX models (2 stages)
-        h1 = np.zeros((1, 1, 128), dtype=np.float32)
-        c1 = np.zeros((1, 1, 128), dtype=np.float32)
-        h2 = np.zeros((1, 1, 128), dtype=np.float32)
-        c2 = np.zeros((1, 1, 128), dtype=np.float32)
+        # LSTM states — initialized from model metadata
+        # model_1 state: [1, 2, 128, 2]  (packed LSTM h+c for 2 layers)
+        # model_2 state: [1, 2, 128, 2]
+        states_1 = init_inputs[0][inp_names_1[1]].copy()
+        states_2 = init_inputs[1][inp_names_2[1]].copy()
 
         for i in range(num_blocks):
             start = i * _DTLN_BLOCK_SHIFT
-            # Shift buffer
+
+            # Shift input buffer and append new block
             in_buffer[:-_DTLN_BLOCK_SHIFT] = in_buffer[_DTLN_BLOCK_SHIFT:]
             in_buffer[-_DTLN_BLOCK_SHIFT:] = x[start:start + _DTLN_BLOCK_SHIFT].astype(np.float32)
 
-            if len(sessions) >= 2:
-                # Stage 1: STFT domain
-                inp = in_buffer.reshape(1, 1, -1)
-                result1 = sessions[0].run(None, {
-                    sessions[0].get_inputs()[0].name: inp,
-                    sessions[0].get_inputs()[1].name: h1,
-                    sessions[0].get_inputs()[2].name: c1,
-                })
-                estimated_block = result1[0].flatten()
-                h1, c1 = result1[1], result1[2]
+            # ---- Stage 1: STFT domain ----
+            # Compute magnitude spectrum
+            in_block_fft = np.fft.rfft(in_buffer)
+            in_mag = np.abs(in_block_fft).astype(np.float32)
+            in_phase = np.angle(in_block_fft)
 
-                # Stage 2: time domain
-                inp2 = estimated_block.reshape(1, 1, -1)
-                result2 = sessions[1].run(None, {
-                    sessions[1].get_inputs()[0].name: inp2,
-                    sessions[1].get_inputs()[1].name: h2,
-                    sessions[1].get_inputs()[2].name: c2,
-                })
-                out_block = result2[0].flatten()
-                h2, c2 = result2[1], result2[2]
-            else:
-                # Single combined model
-                inp = in_buffer.reshape(1, 1, -1)
-                result = sessions[0].run(None, {
-                    sessions[0].get_inputs()[0].name: inp,
-                })
-                out_block = result[0].flatten()
+            # Run model_1: magnitude → mask
+            mag_input = in_mag.reshape(1, 1, _DTLN_NUM_BINS)
+            result_1 = sess_1.run(None, {
+                inp_names_1[0]: mag_input,
+                inp_names_1[1]: states_1,
+            })
+            estimated_mag = result_1[0]  # [1, 1, 257] — mask * magnitude
+            states_1 = result_1[1]       # updated LSTM states
+
+            # Apply mask in STFT domain and reconstruct time-domain estimate
+            estimated_complex = estimated_mag.flatten() * np.exp(1j * in_phase)
+            estimated_block = np.fft.irfft(estimated_complex).astype(np.float32)
+
+            # ---- Stage 2: time domain ----
+            est_input = estimated_block.reshape(1, 1, _DTLN_BLOCK_LEN)
+            result_2 = sess_2.run(None, {
+                inp_names_2[0]: est_input,
+                inp_names_2[1]: states_2,
+            })
+            out_block = result_2[0].flatten()  # [512] enhanced frame
+            states_2 = result_2[1]             # updated LSTM states
 
             # Overlap-add output
             out_buffer[:-_DTLN_BLOCK_SHIFT] = out_buffer[_DTLN_BLOCK_SHIFT:]
@@ -258,14 +317,3 @@ class DTLNModel(EnhancementModel):
             output[start:start + _DTLN_BLOCK_SHIFT] = out_buffer[:_DTLN_BLOCK_SHIFT]
 
         return output.astype(np.float64)
-
-    def _process_tensorflow(self, x: np.ndarray) -> np.ndarray:
-        """Process audio through TensorFlow SavedModel."""
-        import tensorflow as tf
-
-        model = self._session["model"]
-        x_tensor = tf.constant(x.reshape(1, -1).astype(np.float32))
-        output = model(x_tensor)
-        if isinstance(output, dict):
-            output = list(output.values())[0]
-        return output.numpy().flatten().astype(np.float64)

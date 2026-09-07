@@ -14,6 +14,17 @@ dependencies = [
     "matplotlib>=3.8",
 ]
 
+[project.optional-dependencies]
+ai = [
+    "onnxruntime>=1.16",
+    "pystoi>=0.4",
+]
+# pesq requires MSVC C++ Build Tools on Windows — install separately:
+#   pip install pesq
+metrics = [
+    "pystoi>=0.4",
+]
+
 
 [tool.setuptools.packages.find]
 where = ["src"]
