@@ -83,4 +83,3 @@ def get_best_available_model(
 
 
 __all__ = ["EnhancementModel", "get_best_available_model"]
-

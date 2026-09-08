@@ -397,4 +397,3 @@ def evaluate_scenario(
         metrics["pesq_approx"] = pesq_val
         metrics["pesq_source"] = pesq_src
     return metrics
-
