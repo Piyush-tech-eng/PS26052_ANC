@@ -12,27 +12,27 @@
   },
   "validation": {
     "impulse_response_error": [
-      5.921654356763253e-18,
-      3.3589378934039598e-18,
+      4.39819155422363e-18,
+      -3.542478364562884e-18,
       -1.1102230246251565e-16,
       0.0,
-      0.0,
       -1.3877787807814457e-17,
-      -1.5117900437133547e-17,
-      -9.041311546640356e-18,
-      1.2412219875086831e-17,
-      -8.637516333252299e-18,
-      -1.6593100219103138e-17,
-      -1.3480685059987018e-17,
-      -1.5170524247190463e-18,
-      3.15343587616477e-18,
-      -6.8928932642252086e-18,
-      -6.2548756347729916e-18
+      -2.7755575615628914e-17,
+      -1.23966139104905e-17,
+      -1.9245152181607932e-17,
+      1.2432404867102396e-17,
+      -1.7141418491879332e-17,
+      -1.6053403847214605e-17,
+      -9.854337380691262e-18,
+      -3.4470076496791634e-19,
+      2.917047353347053e-18,
+      -6.183861159191365e-18,
+      -6.882266509096631e-18
     ],
-    "impulse_response_rmse": 2.921878688079556e-17,
-    "relative_impulse_error": 1.9958983976386648e-16,
-    "magnitude_response_rmse_db": 2.2097057754736303e-15,
-    "phase_response_rmse_radians": 1.039660901816293e-16
+    "impulse_response_rmse": 3.035447676118689e-17,
+    "relative_impulse_error": 2.0734759377923705e-16,
+    "magnitude_response_rmse_db": 2.2594412935316944e-15,
+    "phase_response_rmse_radians": 1.1477059451951755e-16
   },
   "model_artifact": "results\\m5_01_secondary_path_identification\\secondary_path_model.npz",
   "model_metadata": {
@@ -51,27 +51,27 @@
     },
     "validation_metrics": {
       "impulse_response_error": [
-        5.921654356763253e-18,
-        3.3589378934039598e-18,
+        4.39819155422363e-18,
+        -3.542478364562884e-18,
         -1.1102230246251565e-16,
         0.0,
-        0.0,
         -1.3877787807814457e-17,
-        -1.5117900437133547e-17,
-        -9.041311546640356e-18,
-        1.2412219875086831e-17,
-        -8.637516333252299e-18,
-        -1.6593100219103138e-17,
-        -1.3480685059987018e-17,
-        -1.5170524247190463e-18,
-        3.15343587616477e-18,
-        -6.8928932642252086e-18,
-        -6.2548756347729916e-18
+        -2.7755575615628914e-17,
+        -1.23966139104905e-17,
+        -1.9245152181607932e-17,
+        1.2432404867102396e-17,
+        -1.7141418491879332e-17,
+        -1.6053403847214605e-17,
+        -9.854337380691262e-18,
+        -3.4470076496791634e-19,
+        2.917047353347053e-18,
+        -6.183861159191365e-18,
+        -6.882266509096631e-18
       ],
-      "impulse_response_rmse": 2.921878688079556e-17,
-      "relative_impulse_error": 1.9958983976386648e-16,
-      "magnitude_response_rmse_db": 2.2097057754736303e-15,
-      "phase_response_rmse_radians": 1.039660901816293e-16
+      "impulse_response_rmse": 3.035447676118689e-17,
+      "relative_impulse_error": 2.0734759377923705e-16,
+      "magnitude_response_rmse_db": 2.2594412935316944e-15,
+      "phase_response_rmse_radians": 1.1477059451951755e-16
     },
     "metadata": {
       "source": "synthetic-secondary-path-identification",
@@ -80,34 +80,34 @@
   },
   "mismatch_experiments": {
     "identified_perfect_case": {
-      "final_error_power": 1.2349471606962974e-12,
-      "final_power_vs_no_control": 1.5026645133732993e-12,
-      "attenuation_db_vs_no_control": 118.2305989016453,
-      "final_power_vs_identified_model": 0.9998202314274255
+      "final_error_power": 1.2349471607023468e-12,
+      "final_power_vs_no_control": 1.5026645133806601e-12,
+      "attenuation_db_vs_no_control": 118.230598901624,
+      "final_power_vs_identified_model": 0.9998202314274264
     },
     "gain_mismatch": {
-      "final_error_power": 1.3098375255955987e-12,
-      "final_power_vs_no_control": 1.593789945545075e-12,
-      "attenuation_db_vs_no_control": 117.97495301582083,
-      "final_power_vs_identified_model": 1.0604518959620328
+      "final_error_power": 1.3098375255850596e-12,
+      "final_power_vs_no_control": 1.5937899455322513e-12,
+      "attenuation_db_vs_no_control": 117.97495301585577,
+      "final_power_vs_identified_model": 1.0604518959483067
     },
     "delay_mismatch": {
-      "final_error_power": 3.1870748314091626e+52,
-      "final_power_vs_no_control": 3.8779831259529436e+52,
-      "attenuation_db_vs_no_control": -525.8860591502596,
-      "final_power_vs_identified_model": 2.580273874810477e+64
+      "final_error_power": 3.1870748313421977e+52,
+      "final_power_vs_no_control": 3.8779831258714614e+52,
+      "attenuation_db_vs_no_control": -525.8860591501683,
+      "final_power_vs_identified_model": 2.5802738747436246e+64
     },
     "coefficient_mismatch": {
-      "final_error_power": 1.3801624330096986e-12,
-      "final_power_vs_no_control": 1.6793601999985922e-12,
-      "attenuation_db_vs_no_control": 117.74786278633516,
-      "final_power_vs_identified_model": 1.117387340200986
+      "final_error_power": 1.380162432985088e-12,
+      "final_power_vs_no_control": 1.6793601999686462e-12,
+      "attenuation_db_vs_no_control": 117.7478627864126,
+      "final_power_vs_identified_model": 1.1173873401755885
     },
     "phase_shaping_mismatch": {
-      "final_error_power": 9.04693845804179e-09,
-      "final_power_vs_no_control": 1.1008174121317539e-08,
-      "attenuation_db_vs_no_control": 79.58284698960912,
-      "final_power_vs_identified_model": 7324.452730211567
+      "final_error_power": 9.046938458037622e-09,
+      "final_power_vs_no_control": 1.1008174121312468e-08,
+      "attenuation_db_vs_no_control": 79.58284698961113,
+      "final_power_vs_identified_model": 7324.45273017232
     }
   },
   "acceptance": {

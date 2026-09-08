@@ -6,6 +6,7 @@ env/
 # Python cache
 __pycache__/
 *.py[cod]
+*.egg-info/
 
 # Jupyter checkpoints
 .ipynb_checkpoints/
@@ -17,3 +18,19 @@ Thumbs.db
 # Large temporary/generated files
 *.tmp
 *.log
+
+# Pytest
+.pytest_cache/
+
+# Downloaded corpora (large, not tracked)
+data/corpora/
+
+# Generated results (reproducible from code)
+results/
+
+# Model checkpoints (large)
+*.pt
+*.pth
+
+# ONNX cache
+_cache/

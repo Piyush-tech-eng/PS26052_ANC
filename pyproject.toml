@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ps26052-anc"
-version = "0.1.0"
+version = "0.2.0"
 description = "AI-driven Adaptive Noise Cancellation for Defence Communications"
 requires-python = ">=3.10"
 dependencies = [
@@ -18,12 +18,43 @@ dependencies = [
 ai = [
     "onnxruntime>=1.16",
     "pystoi>=0.4",
+    "soundfile>=0.12",
 ]
 # pesq requires MSVC C++ Build Tools on Windows — install separately:
 #   pip install pesq
 metrics = [
     "pystoi>=0.4",
 ]
+training = [
+    "torch>=2.0",
+    "torchaudio>=2.0",
+    "onnx>=1.14",
+    "soundfile>=0.12",
+    "pystoi>=0.4",
+]
+hardware = [
+    "pyaudio>=0.2.13",
+    "sounddevice>=0.4",
+]
+export = [
+    "onnx>=1.14",
+    "onnxruntime>=1.16",
+]
+full = [
+    "onnxruntime>=1.16",
+    "pystoi>=0.4",
+    "soundfile>=0.12",
+    "torch>=2.0",
+    "torchaudio>=2.0",
+    "onnx>=1.14",
+    "pyaudio>=0.2.13",
+    "sounddevice>=0.4",
+]
+
+
+[project.scripts]
+anc = "anc.cli:main"
+anc-demo = "anc.cli:main"
 
 
 [tool.setuptools.packages.find]
@@ -33,3 +64,4 @@ where = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src", "experiments"]
+

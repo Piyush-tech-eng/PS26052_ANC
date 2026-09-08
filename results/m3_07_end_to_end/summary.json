@@ -16,17 +16,17 @@
       "experiment_seed": 26052,
       "learning_window": 256
     },
-    "initial_error_power": 0.015561128279964382,
-    "final_error_power": 3.152936300837698e-32,
-    "error_power_ratio": 2.026161756469287e-30,
+    "initial_error_power": 0.01556112827996438,
+    "final_error_power": 3.092121451725025e-32,
+    "error_power_ratio": 1.9870804970525305e-30,
     "error_decreased": true,
     "coefficients_stabilized": true,
-    "final_coefficient_norm": 0.529150262212918,
+    "final_coefficient_norm": 0.5291502622129182,
     "wiener_comparison": {
-      "initial_coefficient_error": 0.07668248172377623,
-      "final_coefficient_error": 0.00016059857021651674,
-      "coefficient_error_ratio": 0.0020943319335310576,
-      "minimum_coefficient_error": 0.0001475737629553941,
+      "initial_coefficient_error": 0.07668248172377622,
+      "final_coefficient_error": 0.00016059857021653062,
+      "coefficient_error_ratio": 0.0020943319335312393,
+      "minimum_coefficient_error": 0.0001475737629554062,
       "minimum_error_index": 934,
       "moved_closer_to_wiener": true
     }
@@ -42,16 +42,16 @@
       "learning_window": 256
     },
     "initial_error_power": 0.005580568495157137,
-    "final_error_power": 1.763251456809707e-32,
-    "error_power_ratio": 3.1596269418425755e-30,
+    "final_error_power": 3.300998484770097e-32,
+    "error_power_ratio": 5.915165251774258e-30,
     "error_decreased": true,
     "coefficients_stabilized": true,
-    "final_coefficient_norm": 0.529150262212918,
+    "final_coefficient_norm": 0.5291502622129182,
     "wiener_comparison": {
-      "initial_coefficient_error": 0.03887299326939149,
-      "final_coefficient_error": 0.00016059857021651636,
-      "coefficient_error_ratio": 0.004131366193067782,
-      "minimum_coefficient_error": 0.00014179102370125737,
+      "initial_coefficient_error": 0.03887299326939148,
+      "final_coefficient_error": 0.00016059857021651726,
+      "coefficient_error_ratio": 0.004131366193067806,
+      "minimum_coefficient_error": 0.0001417910237012612,
       "minimum_error_index": 716,
       "moved_closer_to_wiener": true
     }
@@ -68,11 +68,11 @@
         "learning_window": 128
       },
       "initial_error_power": 0.07619681524503284,
-      "final_error_power": 1.0590250012342977e-14,
-      "error_power_ratio": 1.3898546780842404e-13,
+      "final_error_power": 1.0590250022041611e-14,
+      "error_power_ratio": 1.3898546793570802e-13,
       "error_decreased": true,
       "coefficients_stabilized": true,
-      "final_coefficient_norm": 0.6688796515746064,
+      "final_coefficient_norm": 0.6688796515746063,
       "wiener_comparison": null
     },
     "correlated_input": {
@@ -86,11 +86,11 @@
         "learning_window": 128
       },
       "initial_error_power": 0.07427101384736767,
-      "final_error_power": 2.1277802959489604e-07,
-      "error_power_ratio": 2.864886563042881e-06,
+      "final_error_power": 2.1277802959486433e-07,
+      "error_power_ratio": 2.864886563042454e-06,
       "error_decreased": true,
       "coefficients_stabilized": true,
-      "final_coefficient_norm": 0.6686782077850515,
+      "final_coefficient_norm": 0.6686782077850517,
       "wiener_comparison": null
     },
     "tonal_input": {
@@ -103,9 +103,9 @@
         "experiment_seed": 26052,
         "learning_window": 128
       },
-      "initial_error_power": 0.015148328345848653,
-      "final_error_power": 1.6730802813151944e-07,
-      "error_power_ratio": 1.1044652869395135e-05,
+      "initial_error_power": 0.015148328345848651,
+      "final_error_power": 1.6730802813152174e-07,
+      "error_power_ratio": 1.104465286939529e-05,
       "error_decreased": true,
       "coefficients_stabilized": true,
       "final_coefficient_norm": 0.3041475270796199,
@@ -122,8 +122,8 @@
         "learning_window": 128
       },
       "initial_error_power": 0.03920868614685795,
-      "final_error_power": 1.389156898481986e-31,
-      "error_power_ratio": 3.542982525042606e-30,
+      "final_error_power": 1.3523504513148016e-31,
+      "error_power_ratio": 3.449109328095062e-30,
       "error_decreased": true,
       "coefficients_stabilized": true,
       "final_coefficient_norm": 0.6688796603276258,
@@ -142,12 +142,12 @@
         "experiment_seed": null,
         "learning_window": 128
       },
-      "initial_error_power": 21795.398120618385,
-      "final_error_power": 2.0456064881087918e+37,
-      "error_power_ratio": 9.385497235646518e+32,
+      "initial_error_power": 21795.398120618236,
+      "final_error_power": 2.045606488108742e+37,
+      "error_power_ratio": 9.385497235646354e+32,
       "error_decreased": false,
       "coefficients_stabilized": true,
-      "final_coefficient_norm": 2.0850442141785403e+18,
+      "final_coefficient_norm": 2.0850442141785165e+18,
       "wiener_comparison": null
     },
     "nlms": {
@@ -160,12 +160,12 @@
         "experiment_seed": null,
         "learning_window": 128
       },
-      "initial_error_power": 0.0315178260889947,
-      "final_error_power": 5.352592649689615e-31,
-      "error_power_ratio": 1.6982746952711248e-29,
+      "initial_error_power": 0.03151782608899471,
+      "final_error_power": 1.734290911198216e-30,
+      "error_power_ratio": 5.502571485422903e-29,
       "error_decreased": true,
       "coefficients_stabilized": true,
-      "final_coefficient_norm": 0.6688796603276258,
+      "final_coefficient_norm": 0.668879660327626,
       "wiener_comparison": null
     }
   },
