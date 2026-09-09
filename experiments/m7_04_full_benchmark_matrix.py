@@ -86,9 +86,18 @@ def run_benchmark_matrix(
     except Exception as e:
         print(f"Warning: Could not initialize AI model: {e}")
 
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
     rows: list[dict[str, object]] = []
 
-    for window in test_windows:
+    for idx, window in enumerate(test_windows):
+        if (idx + 1) % 100 == 0 or (idx + 1) == len(test_windows):
+            print(f"Evaluated {idx + 1}/{len(test_windows)} test windows...", flush=True)
+
         noise_family = "unknown"
         snr_db = 0.0
         if window.speech_metadata:

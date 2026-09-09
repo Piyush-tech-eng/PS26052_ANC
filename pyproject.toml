@@ -55,6 +55,7 @@ full = [
 [project.scripts]
 anc = "anc.cli:main"
 anc-demo = "anc.cli:main"
+anc-process = "anc.cli_process:main"
 
 
 [tool.setuptools.packages.find]

@@ -86,7 +86,7 @@ def export_to_onnx(
     try:
         import onnxruntime as ort
     except ImportError:
-        print("⚠ onnxruntime not available — skipping numerical validation.")
+        print("[WARN] onnxruntime not available -- skipping numerical validation.")
         return {
             "output_path": str(output_file),
             "validated": False,
@@ -111,5 +111,5 @@ def export_to_onnx(
             f"exceeds tolerance {tolerance:.6f}."
         )
 
-    print(f"  ✓ ONNX export validated: max error = {max_error:.2e} < {tolerance:.2e}")
+    print(f"  [OK] ONNX export validated: max error = {max_error:.2e} < {tolerance:.2e}")
     return result

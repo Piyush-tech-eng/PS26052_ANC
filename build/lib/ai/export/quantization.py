@@ -87,8 +87,8 @@ def quantize_onnx(
         "compression_ratio": compression_ratio,
     }
 
-    print(f"  ✓ Quantized ({quantization_type}): "
-          f"{original_size / 1024:.0f}KB → {quantized_size / 1024:.0f}KB "
+    print(f"  [OK] Quantized ({quantization_type}): "
+          f"{original_size / 1024:.0f}KB -> {quantized_size / 1024:.0f}KB "
           f"({compression_ratio:.1f}x compression)")
 
     return result

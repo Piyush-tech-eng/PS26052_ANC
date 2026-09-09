@@ -24,7 +24,7 @@ class TestModelFactory:
     def test_auto_returns_enhancement_model(self):
         model = get_best_available_model()
         assert isinstance(model, EnhancementModel)
-        assert model.name in ("dtln", "rnnoise", "spectral_gate")
+        assert model.name in ("dtln", "dtln_finetuned", "rnnoise", "spectral_gate")
 
     def test_prefer_spectral_gate(self):
         model = get_best_available_model(prefer="spectral_gate")
@@ -44,7 +44,7 @@ class TestModelFactory:
         if not is_available() or _find_model_path() is None:
             pytest.skip("DTLN not fully available")
         model = get_best_available_model()
-        assert model.name == "dtln"
+        assert model.name in ("dtln", "dtln_finetuned")
 
 
 class TestHybridEngineIntegration:

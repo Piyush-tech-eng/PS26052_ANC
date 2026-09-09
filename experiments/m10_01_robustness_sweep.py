@@ -77,6 +77,12 @@ def run_robustness_sweep(
     output_dir: str | Path,
 ) -> None:
     """Run robustness sweep across dynamic conditions."""
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
     from anc.evaluation.dataset import load_dataset
 
     splits, _ = load_dataset(dataset_dir)

@@ -34,6 +34,12 @@ def run_generalization_report(
     Analyzes speakers and noise families in the test split that are
     absent from train+validation, proving the model generalizes.
     """
+    if hasattr(sys.stdout, "reconfigure"):
+        try:
+            sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+        except Exception:
+            pass
+
     splits, _ = load_dataset(dataset_dir)
 
     # Identify speakers/noise families in each split
@@ -75,7 +81,7 @@ def run_generalization_report(
     # Run metrics on test split
     test_windows = splits.get("test", [])
     if not test_windows:
-        print("\n⚠ No test windows found!")
+        print("\n[WARN] No test windows found!")
         return
 
     sr = test_windows[0].sample_rate
@@ -149,11 +155,11 @@ def run_generalization_report(
         print(f"\n{'='*70}")
         print(f"GENERALIZATION GAP: {gap:+.2f} dB SI-SNR")
         if abs(gap) < 2.0:
-            print("✅ Gap < 2 dB — strong generalization evidence.")
+            print("[PASS] Gap < 2 dB -- strong generalization evidence.")
         elif abs(gap) < 5.0:
-            print("⚠️  Gap 2-5 dB — moderate, potentially acceptable.")
+            print("[WARN] Gap 2-5 dB -- moderate, potentially acceptable.")
         else:
-            print("❌ Gap > 5 dB — significant generalization concern.")
+            print("[FAIL] Gap > 5 dB -- significant generalization concern.")
 
     # Phase C.2: Explicit Worst-Case Condition Reporting
     print(f"\n{'='*70}")

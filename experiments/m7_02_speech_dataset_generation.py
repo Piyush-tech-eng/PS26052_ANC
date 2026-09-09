@@ -195,7 +195,11 @@ def main() -> None:
         rirs = generate_synthetic_rirs(n_rirs=5, sampling_rate=speech_samples[0].sampling_rate, seed=42)
     
     
-    snr_levels = [0.0, 10.0] if any(s.provenance.get("synthetic_approximation") for s in speech_samples) else list(DEFAULT_SNR_LADDER_DB)
+    snr_levels = [0.0, 10.0]
+    unique_speech = speech_samples[:4]
+    unique_speech_ids = [s.source_id for s in unique_speech]
+    unique_families = sorted(list(set(n.noise_family for n in noise_samples)))
+
     definitions = build_scenario_matrix(
         signal_classes=["speech"],
         input_levels=["nominal"],
@@ -203,8 +207,8 @@ def main() -> None:
         source_types=["speech"],
         controllers=["nlms", "none"],
         secondary_path_models=["ideal"],
-        speech_source_ids=[s.speaker_id for s in speech_samples],
-        noise_families=[n.noise_family for n in noise_samples],
+        speech_source_ids=unique_speech_ids,
+        noise_families=unique_families,
         snr_dbs=snr_levels,
         config_snapshot={"algorithm": "nlms", "learning_rate": 0.01},
         seed=42
@@ -212,14 +216,27 @@ def main() -> None:
     
     print(f"Generated {len(definitions)} scenario definitions.")
     
+    speech_lookup = {s.source_id: s for s in speech_samples}
+    noise_lookup: dict[str, list[NoiseSample]] = {}
+    for n in noise_samples:
+        noise_lookup.setdefault(n.noise_family, []).append(n)
+
     results = []
     
     for idx, df in enumerate(definitions):
         # Find matching source
-        speech = next(s for s in speech_samples if s.speaker_id == df.speech_source_id)
-        noise = next(n for n in noise_samples if n.noise_family == df.noise_family)
+        speech = speech_lookup[df.speech_source_id]
+        matching_noises = noise_lookup[df.noise_family]
+        noise = matching_noises[idx % len(matching_noises)]
         
-        mix_result = mix_at_snr(speech, noise, df.snr_db)
+        # Trim to 3.0s for uniform windowing and fast scenario simulation
+        target_len = int(speech.sampling_rate * 3.0)
+        s_audio = speech.audio[:target_len] if len(speech.audio) >= target_len else np.pad(speech.audio, (0, target_len - len(speech.audio)))
+        n_audio = noise.audio[:target_len] if len(noise.audio) >= target_len else np.pad(noise.audio, (0, target_len - len(noise.audio)))
+        s_trimmed = SpeechSample(audio=s_audio, sampling_rate=speech.sampling_rate, source_id=speech.source_id, speaker_id=speech.speaker_id, provenance=speech.provenance)
+        n_trimmed = NoiseSample(audio=n_audio, sampling_rate=noise.sampling_rate, noise_id=noise.noise_id, noise_family=noise.noise_family, source_id=noise.source_id, provenance=noise.provenance)
+
+        mix_result = mix_at_snr(s_trimmed, n_trimmed, df.snr_db)
         mixed_audio = mix_result.noisy_speech
         clean_target = mix_result.clean_speech
 
@@ -258,13 +275,16 @@ def main() -> None:
         target = clean_target
         
         cfg = ANCExperimentConfig(
+            sampling_rate_hz=speech.sampling_rate,
             algorithm=df.controller,
             step_size=0.01,
             filter_length=64,
-            learning_window=8000,
+            learning_window=speech.sampling_rate,
         )
         res = run_scenario(df, scenario, cfg, target=target)
         results.append((res, mixed_audio, target, mix_result.noise_component, is_augmented, aug_type))
+        if (idx + 1) % 10 == 0 or (idx + 1) == len(definitions):
+            print(f"  Processed {idx + 1}/{len(definitions)} scenarios...", flush=True)
         
     print("Extracting windows...")
     window_config = WindowConfig(window_length=4000, hop_length=2000)

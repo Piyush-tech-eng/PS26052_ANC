@@ -31,6 +31,7 @@ DATA_ROOT = Path(__file__).resolve().parent / "corpora"
 # ──────────────────────────────────────────────────────────────────────
 
 LIBRISPEECH_URLS = {
+    "dev-clean": "https://www.openslr.org/resources/12/dev-clean.tar.gz",
     "train-clean-100": "https://www.openslr.org/resources/12/train-clean-100.tar.gz",
     "train-clean-360": "https://www.openslr.org/resources/12/train-clean-360.tar.gz",
 }
@@ -42,6 +43,13 @@ MUSAN_URL = "https://www.openslr.org/resources/17/musan.tar.gz"
 ESC50_URL = "https://github.com/karolpiczak/ESC-50/archive/refs/heads/master.zip"
 
 
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
+
 def _progress_hook(block_num: int, block_size: int, total_size: int) -> None:
     """Console progress bar for urllib downloads."""
     downloaded = block_num * block_size
@@ -49,7 +57,7 @@ def _progress_hook(block_num: int, block_size: int, total_size: int) -> None:
         pct = min(100.0, downloaded / total_size * 100.0)
         bar_len = 40
         filled = int(bar_len * pct / 100)
-        bar = "█" * filled + "░" * (bar_len - filled)
+        bar = "=" * filled + "-" * (bar_len - filled)
         mb_down = downloaded / (1024 * 1024)
         mb_total = total_size / (1024 * 1024)
         sys.stdout.write(f"\r  [{bar}] {pct:5.1f}% ({mb_down:.1f}/{mb_total:.1f} MB)")
@@ -60,18 +68,24 @@ def _progress_hook(block_num: int, block_size: int, total_size: int) -> None:
 
 
 def _download_file(url: str, dest: Path) -> Path:
-    """Download a file if it doesn't already exist."""
-    if dest.exists():
-        print(f"  ✓ Already downloaded: {dest.name}")
-        return dest
-
+    """Download a file using curl with resume support, falling back to urllib."""
     dest.parent.mkdir(parents=True, exist_ok=True)
     print(f"  Downloading: {url}")
+
+    if shutil.which("curl"):
+        import subprocess
+        ret = subprocess.run(
+            ["curl", "-L", "-C", "-", "--retry", "5", "--retry-delay", "2", "-o", str(dest), url],
+            check=False,
+        )
+        if ret.returncode == 0 and dest.exists() and dest.stat().st_size > 0:
+            return dest
+
     try:
         urllib.request.urlretrieve(url, str(dest), reporthook=_progress_hook)
         print()  # newline after progress bar
     except Exception as exc:
-        print(f"\n  ✗ Download failed: {exc}")
+        print(f"\n  [FAIL] Download failed: {exc}")
         if dest.exists():
             dest.unlink()
         raise
@@ -128,13 +142,13 @@ def download_librispeech(
     for subset in subsets:
         url = LIBRISPEECH_URLS.get(subset)
         if url is None:
-            print(f"  ⚠ Unknown subset '{subset}', skipping.")
+            print(f"  [WARN] Unknown subset '{subset}', skipping.")
             continue
 
         # Check if already extracted
         expected_dir = root / "LibriSpeech" / subset
         if expected_dir.exists() and any(expected_dir.rglob("*.flac")):
-            print(f"  ✓ Already extracted: {subset}")
+            print(f"  [OK] Already extracted: {subset}")
             continue
 
         archive = cache_dir / f"{subset}.tar.gz"
@@ -142,7 +156,7 @@ def download_librispeech(
         _extract_tar_gz(archive, root)
 
     marker.write_text("done\n")
-    print(f"  ✓ LibriSpeech ready at: {root}")
+    print(f"  [OK] LibriSpeech ready at: {root}")
     return root
 
 
@@ -157,7 +171,7 @@ def download_vctk(root: Path | None = None) -> Path:
     # Check if already extracted
     wav_dir = root / "VCTK-Corpus-0.92" / "wav48_silence_trimmed"
     if wav_dir.exists() and any(wav_dir.rglob("*.flac")):
-        print(f"  ✓ Already extracted.")
+        print(f"  [OK] Already extracted.")
         return root
 
     cache_dir = root / "_cache"
@@ -165,7 +179,7 @@ def download_vctk(root: Path | None = None) -> Path:
     _download_file(VCTK_URL, archive)
     _extract_zip(archive, root)
 
-    print(f"  ✓ VCTK ready at: {root}")
+    print(f"  [OK] VCTK ready at: {root}")
     return root
 
 
@@ -179,7 +193,7 @@ def download_musan(root: Path | None = None) -> Path:
 
     noise_dir = root / "musan" / "noise"
     if noise_dir.exists() and any(noise_dir.rglob("*.wav")):
-        print(f"  ✓ Already extracted.")
+        print(f"  [OK] Already extracted.")
         return root
 
     cache_dir = root / "_cache"
@@ -187,7 +201,7 @@ def download_musan(root: Path | None = None) -> Path:
     _download_file(MUSAN_URL, archive)
     _extract_tar_gz(archive, root)
 
-    print(f"  ✓ MUSAN ready at: {root}")
+    print(f"  [OK] MUSAN ready at: {root}")
     return root
 
 
@@ -201,7 +215,7 @@ def download_esc50(root: Path | None = None) -> Path:
 
     audio_dir = root / "ESC-50-master" / "audio"
     if audio_dir.exists() and any(audio_dir.rglob("*.wav")):
-        print(f"  ✓ Already extracted.")
+        print(f"  [OK] Already extracted.")
         return root
 
     cache_dir = root / "_cache"
@@ -209,7 +223,7 @@ def download_esc50(root: Path | None = None) -> Path:
     _download_file(ESC50_URL, archive)
     _extract_zip(archive, root)
 
-    print(f"  ✓ ESC-50 ready at: {root}")
+    print(f"  [OK] ESC-50 ready at: {root}")
     return root
 
 

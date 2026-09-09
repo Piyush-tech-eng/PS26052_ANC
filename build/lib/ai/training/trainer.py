@@ -14,10 +14,17 @@ with:
 from __future__ import annotations
 
 import json
+import sys
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
+
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
 
 import numpy as np
 
@@ -138,16 +145,16 @@ def _compute_validation_metrics(
                 snr = compute_noise_reduction_db(nsy, est - tgt)
                 snr_values.append(snr)
 
-                # STOI
-                if has_pystoi:
+                # STOI (sample up to 50 windows for fast validation tracking)
+                if has_pystoi and len(stoi_values) < 50:
                     try:
                         s = compute_stoi(tgt, est, sample_rate, extended=False)
                         stoi_values.append(float(s))
                     except Exception:
                         pass
 
-                # PESQ
-                if has_pesq:
+                # PESQ (sample up to 50 windows for fast validation tracking)
+                if has_pesq and len(pesq_values) < 50:
                     try:
                         mode = "wb" if sample_rate >= 16000 else "nb"
                         p = compute_pesq(sample_rate, tgt, est, mode)
@@ -216,7 +223,6 @@ def train_model(
         factor=config.lr_factor,
         patience=config.lr_patience,
         min_lr=config.min_lr,
-        verbose=True,
     )
 
     # Training state
@@ -226,7 +232,7 @@ def train_model(
     history: list[dict[str, float]] = []
 
     print(f"\n{'='*70}")
-    print(f"Training started — max {config.max_epochs} epochs, patience {config.patience}")
+    print(f"Training started - max {config.max_epochs} epochs, patience {config.patience}")
     print(f"Device: {device}, LR: {config.learning_rate}")
     print(f"Loss weights: SI-SNR={config.si_snr_weight}, L1={config.l1_weight}, STFT={config.stft_weight}")
     print(f"{'='*70}\n")
@@ -333,13 +339,13 @@ def train_model(
                 "val_metrics": val_metrics,
             }
             torch.save(checkpoint, output_path / "best_model.pt")
-            print(f"  ★ New best STOI: {best_stoi:.4f} — checkpoint saved.")
+            print(f"  [BEST] New best STOI: {best_stoi:.4f} - checkpoint saved.", flush=True)
         else:
             epochs_without_improvement += 1
 
         # Early stopping
         if epochs_without_improvement >= config.patience:
-            print(f"\n⏹ Early stopping at epoch {epoch} (no improvement for {config.patience} epochs)")
+            print(f"\n[STOP] Early stopping at epoch {epoch} (no improvement for {config.patience} epochs)", flush=True)
             break
 
     # Save training history

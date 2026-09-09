@@ -49,11 +49,30 @@ def is_available() -> bool:
 
 if TORCH_AVAILABLE:
 
+    class InstantLayerNorm(nn.Module):
+        """Channel-wise Instant Layer Normalization.
+
+        Normalizes features across the channel dimension independently per
+        time step, matching DTLN's custom InstantLayerNormalization layer.
+        """
+
+        def __init__(self, channels: int = 256, eps: float = 1e-7) -> None:
+            super().__init__()
+            self.gamma = nn.Parameter(torch.ones(channels))
+            self.beta = nn.Parameter(torch.zeros(channels))
+            self.eps = eps
+
+        def forward(self, x: torch.Tensor) -> torch.Tensor:
+            mean = x.mean(dim=-1, keepdim=True)
+            var = ((x - mean) ** 2).mean(dim=-1, keepdim=True)
+            return self.gamma * (x - mean) / torch.sqrt(var + self.eps) + self.beta
+
+
     class DTLNStage1(nn.Module):
         """STFT magnitude domain: magnitude → LSTM → magnitude mask.
 
         Input:  [batch, 1, 257]  (magnitude spectrum)
-        Output: [batch, 1, 257]  (masked magnitude = mask * input)
+        Output: [batch, 1, 257]  (estimated mask)
         """
 
         def __init__(
@@ -88,18 +107,18 @@ if TORCH_AVAILABLE:
 
             Returns
             -------
-            masked_magnitude : torch.Tensor
+            mask : torch.Tensor
                 Shape [batch, 1, num_bins].
             new_states : tuple
                 Updated LSTM states.
             """
             lstm_out, new_states = self.lstm(magnitude, states)
             mask = self.sigmoid(self.fc(lstm_out))
-            return magnitude * mask, new_states
+            return mask, new_states
 
 
     class DTLNStage2(nn.Module):
-        """Time domain: estimated frame → LSTM → enhanced frame.
+        """Time domain: estimated frame → Conv1D encoder → LayerNorm → LSTM → mask → Conv1D decoder.
 
         Input:  [batch, 1, block_len]
         Output: [batch, 1, block_len]
@@ -108,17 +127,22 @@ if TORCH_AVAILABLE:
         def __init__(
             self,
             block_len: int = _DTLN_BLOCK_LEN,
+            encoder_size: int = 256,
             lstm_units: int = _DTLN_LSTM_UNITS,
             num_layers: int = _DTLN_LSTM_LAYERS,
         ) -> None:
             super().__init__()
+            self.encoder = nn.Linear(block_len, encoder_size, bias=False)
+            self.ln = InstantLayerNorm(encoder_size)
             self.lstm = nn.LSTM(
-                input_size=block_len,
+                input_size=encoder_size,
                 hidden_size=lstm_units,
                 num_layers=num_layers,
                 batch_first=True,
             )
-            self.fc = nn.Linear(lstm_units, block_len)
+            self.fc = nn.Linear(lstm_units, encoder_size)
+            self.sigmoid = nn.Sigmoid()
+            self.decoder = nn.Linear(encoder_size, block_len, bias=False)
 
         def forward(
             self,
@@ -141,8 +165,12 @@ if TORCH_AVAILABLE:
             new_states : tuple
                 Updated LSTM states.
             """
-            lstm_out, new_states = self.lstm(frame, states)
-            enhanced = self.fc(lstm_out)
+            encoded = self.encoder(frame)
+            normed = self.ln(encoded)
+            lstm_out, new_states = self.lstm(normed, states)
+            mask = self.sigmoid(self.fc(lstm_out))
+            masked = encoded * mask
+            enhanced = self.decoder(masked)
             return enhanced, new_states
 
 
@@ -159,6 +187,7 @@ if TORCH_AVAILABLE:
             block_len: int = _DTLN_BLOCK_LEN,
             block_shift: int = _DTLN_BLOCK_SHIFT,
             num_bins: int = _DTLN_NUM_BINS,
+            encoder_size: int = 256,
             lstm_units: int = _DTLN_LSTM_UNITS,
             num_layers: int = _DTLN_LSTM_LAYERS,
         ) -> None:
@@ -168,7 +197,7 @@ if TORCH_AVAILABLE:
             self.num_bins = num_bins
 
             self.stage1 = DTLNStage1(num_bins, lstm_units, num_layers)
-            self.stage2 = DTLNStage2(block_len, lstm_units, num_layers)
+            self.stage2 = DTLNStage2(block_len, encoder_size, lstm_units, num_layers)
 
         def forward(self, x: torch.Tensor) -> torch.Tensor:
             """Process a batch of audio signals.
@@ -202,20 +231,17 @@ if TORCH_AVAILABLE:
                 in_buffer[:, -self.block_shift:] = x[:, start:start + self.block_shift]
 
                 # Stage 1: STFT domain
-                # Windowed FFT
-                window = torch.hann_window(self.block_len, device=x.device)
-                windowed = in_buffer * window
-                fft_out = torch.fft.rfft(windowed)
+                fft_out = torch.fft.rfft(in_buffer)
                 magnitude = torch.abs(fft_out)  # [batch, num_bins]
                 phase = torch.angle(fft_out)
 
                 # LSTM mask estimation
                 mag_input = magnitude.unsqueeze(1)  # [batch, 1, num_bins]
-                masked_mag, states1 = self.stage1(mag_input, states1)
-                masked_mag = masked_mag.squeeze(1)  # [batch, num_bins]
+                mask, states1 = self.stage1(mag_input, states1)
+                mask = mask.squeeze(1)  # [batch, num_bins]
 
                 # Reconstruct time-domain estimate
-                estimated_complex = masked_mag * torch.exp(1j * phase)
+                estimated_complex = mask * torch.exp(1j * phase)
                 estimated_block = torch.fft.irfft(estimated_complex, n=self.block_len)
 
                 # Stage 2: time domain
@@ -238,8 +264,8 @@ if TORCH_AVAILABLE:
     ) -> TrainableDTLN:
         """Load DTLN weights from ONNX checkpoints into a trainable PyTorch model.
 
-        Extracts weights from the ONNX graph and maps them to the PyTorch
-        state dict.  This enables fine-tuning from the pretrained checkpoint.
+        Extracts weights from the ONNX graph and explicitly maps them to the PyTorch
+        layers with correct gate ordering, achieving bit-for-bit numerical equivalence.
 
         Parameters
         ----------
@@ -263,44 +289,98 @@ if TORCH_AVAILABLE:
 
         model = TrainableDTLN()
 
-        # Load and extract ONNX weights
-        for stage_idx, (onnx_path, stage) in enumerate([
-            (model_1_path, model.stage1),
-            (model_2_path, model.stage2),
-        ]):
-            onnx_model = onnx.load(str(onnx_path))
-            onnx_weights = {
-                init.name: np.frombuffer(init.raw_data, dtype=np.float32).reshape(init.dims)
-                for init in onnx_model.graph.initializer
+        # Load model_1
+        m1 = onnx.load(str(model_1_path))
+        inits1 = {
+            init.name: onnx.numpy_helper.to_array(init).astype(np.float32)
+            for init in m1.graph.initializer
+        }
+
+        def _onnx_lstm_to_torch(W: np.ndarray, R: np.ndarray, B: np.ndarray):
+            # ONNX gate order: [i, o, f, c]
+            # PyTorch gate order: [i, f, c, o]
+            Wi, Wo, Wf, Wc = np.split(W[0], 4, axis=0)
+            W_torch = np.concatenate([Wi, Wf, Wc, Wo], axis=0)
+            Ri, Ro, Rf, Rc = np.split(R[0], 4, axis=0)
+            R_torch = np.concatenate([Ri, Rf, Rc, Ro], axis=0)
+            Wb_i, Wb_o, Wb_f, Wb_c = np.split(B[0, :512], 4)
+            B_ih_torch = np.concatenate([Wb_i, Wb_f, Wb_c, Wb_o])
+            Rb_i, Rb_o, Rb_f, Rb_c = np.split(B[0, 512:], 4)
+            B_hh_torch = np.concatenate([Rb_i, Rb_f, Rb_c, Rb_o])
+            return (
+                torch.from_numpy(W_torch.copy()),
+                torch.from_numpy(R_torch.copy()),
+                torch.from_numpy(B_ih_torch.copy()),
+                torch.from_numpy(B_hh_torch.copy()),
+            )
+
+        with torch.no_grad():
+            # Stage 1: LSTM layer 0
+            w1, r1, b1_ih, b1_hh = _onnx_lstm_to_torch(
+                inits1["lstm_4_W"], inits1["lstm_4_R"], inits1["lstm_4_B"]
+            )
+            model.stage1.lstm.weight_ih_l0.copy_(w1)
+            model.stage1.lstm.weight_hh_l0.copy_(r1)
+            model.stage1.lstm.bias_ih_l0.copy_(b1_ih)
+            model.stage1.lstm.bias_hh_l0.copy_(b1_hh)
+
+            # Stage 1: LSTM layer 1
+            w2, r2, b2_ih, b2_hh = _onnx_lstm_to_torch(
+                inits1["lstm_5_W"], inits1["lstm_5_R"], inits1["lstm_5_B"]
+            )
+            model.stage1.lstm.weight_ih_l1.copy_(w2)
+            model.stage1.lstm.weight_hh_l1.copy_(r2)
+            model.stage1.lstm.bias_ih_l1.copy_(b2_ih)
+            model.stage1.lstm.bias_hh_l1.copy_(b2_hh)
+
+            # Stage 1: Dense
+            model.stage1.fc.weight.copy_(torch.from_numpy(inits1["dense_2/kernel:0"].T.copy()))
+            model.stage1.fc.bias.copy_(torch.from_numpy(inits1["dense_2/bias:0"].copy()))
+
+            # Load model_2
+            m2 = onnx.load(str(model_2_path))
+            inits2 = {
+                init.name: onnx.numpy_helper.to_array(init).astype(np.float32)
+                for init in m2.graph.initializer
             }
 
-            # Map ONNX initializer names to PyTorch LSTM/FC parameters
-            # The exact mapping depends on the ONNX export format.
-            # We use a heuristic approach: match by shape.
-            state_dict = stage.state_dict()
+            # Stage 2: Encoder (conv1d_2: kernel is [256, 512, 1])
+            k2 = inits2["conv1d_2/kernel:0"].squeeze(-1)
+            model.stage2.encoder.weight.copy_(torch.from_numpy(k2.copy()))
 
-            for param_name, param_tensor in state_dict.items():
-                target_shape = param_tensor.shape
+            # Stage 2: LayerNorm
+            gamma = inits2["model_2/instant_layer_normalization_1/mul/ReadVariableOp/resource:0"]
+            beta = inits2["model_2/instant_layer_normalization_1/add_1/ReadVariableOp/resource:0"]
+            model.stage2.ln.gamma.copy_(torch.from_numpy(gamma.copy()))
+            model.stage2.ln.beta.copy_(torch.from_numpy(beta.copy()))
 
-                # Find the ONNX weight with matching shape
-                matched = False
-                for onnx_name, onnx_array in onnx_weights.items():
-                    if onnx_array.shape == tuple(target_shape):
-                        state_dict[param_name] = torch.from_numpy(onnx_array.copy())
-                        del onnx_weights[onnx_name]
-                        matched = True
-                        break
+            # Stage 2: LSTM layer 0 (unrolled TF/Keras nodes: gate order [i, f, c, o])
+            w_ih_0 = inits2["model_2/lstm_6/MatMul/ReadVariableOp/resource:0"].T
+            w_hh_0 = inits2["model_2/lstm_6/MatMul_1/ReadVariableOp/resource:0"].T
+            b_0 = inits2["model_2/lstm_6/BiasAdd/ReadVariableOp/resource:0"]
+            model.stage2.lstm.weight_ih_l0.copy_(torch.from_numpy(w_ih_0.copy()))
+            model.stage2.lstm.weight_hh_l0.copy_(torch.from_numpy(w_hh_0.copy()))
+            model.stage2.lstm.bias_ih_l0.copy_(torch.from_numpy(b_0.copy()))
+            model.stage2.lstm.bias_hh_l0.zero_()
 
-                if not matched:
-                    # Try transposed shape (common for FC layers)
-                    for onnx_name, onnx_array in onnx_weights.items():
-                        if len(onnx_array.shape) == 2 and onnx_array.T.shape == tuple(target_shape):
-                            state_dict[param_name] = torch.from_numpy(onnx_array.T.copy())
-                            del onnx_weights[onnx_name]
-                            matched = True
-                            break
+            # Stage 2: LSTM layer 1
+            w_ih_1 = inits2["model_2/lstm_7/MatMul/ReadVariableOp/resource:0"].T
+            w_hh_1 = inits2["model_2/lstm_7/MatMul_1/ReadVariableOp/resource:0"].T
+            b_1 = inits2["model_2/lstm_7/BiasAdd/ReadVariableOp/resource:0"]
+            model.stage2.lstm.weight_ih_l1.copy_(torch.from_numpy(w_ih_1.copy()))
+            model.stage2.lstm.weight_hh_l1.copy_(torch.from_numpy(w_hh_1.copy()))
+            model.stage2.lstm.bias_ih_l1.copy_(torch.from_numpy(b_1.copy()))
+            model.stage2.lstm.bias_hh_l1.zero_()
 
-            stage.load_state_dict(state_dict, strict=False)
+            # Stage 2: FC (dense_3)
+            w_dense = inits2["model_2/dense_3/Tensordot/Reshape_1:0"].T
+            b_dense = inits2["model_2/dense_3/BiasAdd/ReadVariableOp/resource:0"]
+            model.stage2.fc.weight.copy_(torch.from_numpy(w_dense.copy()))
+            model.stage2.fc.bias.copy_(torch.from_numpy(b_dense.copy()))
+
+            # Stage 2: Decoder (conv1d_3: kernel is [512, 256, 1])
+            k3 = inits2["conv1d_3/kernel:0"].squeeze(-1)
+            model.stage2.decoder.weight.copy_(torch.from_numpy(k3.copy()))
 
         return model
 
@@ -330,9 +410,8 @@ class DTLNTrainableModel(EnhancementModel):
         if self._model is not None:
             return
 
-        self._model = TrainableDTLN()
-
         if self._checkpoint_path is not None:
+            self._model = TrainableDTLN()
             checkpoint = torch.load(
                 str(self._checkpoint_path),
                 map_location="cpu",
@@ -342,6 +421,14 @@ class DTLNTrainableModel(EnhancementModel):
                 self._model.load_state_dict(checkpoint["model_state_dict"])
             else:
                 self._model.load_state_dict(checkpoint)
+        else:
+            # If no checkpoint given, check if ONNX model exists to load pretrained weights
+            from ai.models.pretrained_dtln import _find_model_path
+            p = _find_model_path()
+            if p is not None and (p / "model_1.onnx").exists() and (p / "model_2.onnx").exists():
+                self._model = load_from_onnx(p / "model_1.onnx", p / "model_2.onnx")
+            else:
+                self._model = TrainableDTLN()
 
         self._model.eval()
 

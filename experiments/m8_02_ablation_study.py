@@ -24,6 +24,12 @@ import json
 import sys
 from pathlib import Path
 
+if hasattr(sys.stdout, "reconfigure"):
+    try:
+        sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+    except Exception:
+        pass
+
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 
@@ -132,7 +138,7 @@ def main() -> None:
                 "name": run_name,
                 "error": str(exc),
             })
-            print(f"  ✗ Failed: {exc}")
+            print(f"  [FAIL] Failed: {exc}")
 
     # Write ablation table
     output_path.mkdir(parents=True, exist_ok=True)

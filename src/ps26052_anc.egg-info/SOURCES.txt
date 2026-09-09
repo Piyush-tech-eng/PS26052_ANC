@@ -27,6 +27,8 @@ src/ai/training/hyperparameter_search.py
 src/ai/training/trainer.py
 src/anc/__main__.py
 src/anc/cli.py
+src/anc/cli_process.py
+src/anc/demo.py
 src/anc/adaptive/__init__.py
 src/anc/adaptive/convergence.py
 src/anc/adaptive/fir.py
@@ -82,6 +84,7 @@ src/ps26052_anc.egg-info/dependency_links.txt
 src/ps26052_anc.egg-info/entry_points.txt
 src/ps26052_anc.egg-info/requires.txt
 src/ps26052_anc.egg-info/top_level.txt
+tests/test_dtln_trainable.py
 tests/test_filters.py
 tests/test_frame_anc.py
 tests/test_full_dataset_validation.py
