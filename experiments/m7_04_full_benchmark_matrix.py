@@ -69,10 +69,14 @@ def _compute_metrics(
 def run_benchmark_matrix(
     dataset_dir: str | Path,
     output_dir: str | Path,
+    max_windows: int | None = None,
 ) -> None:
     """Run the full benchmark matrix."""
     splits, normalization = load_dataset(dataset_dir)
     test_windows = splits.get("test", [])
+
+    if max_windows is not None and max_windows > 0:
+        test_windows = test_windows[:max_windows]
 
     if not test_windows:
         print("ERROR: No test windows found.")
@@ -193,9 +197,10 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Full benchmark matrix.")
     parser.add_argument("--dataset", default="results/m7_speech_ai_handoff")
     parser.add_argument("--output", default="results/m7_04_benchmark_matrix")
+    parser.add_argument("--max-windows", type=int, default=None, help="Limit number of test windows")
     args = parser.parse_args()
 
-    run_benchmark_matrix(args.dataset, args.output)
+    run_benchmark_matrix(args.dataset, args.output, max_windows=args.max_windows)
 
 
 if __name__ == "__main__":
