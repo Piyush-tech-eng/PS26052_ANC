@@ -241,7 +241,7 @@ if TORCH_AVAILABLE:
                 mask = mask.squeeze(1)  # [batch, num_bins]
 
                 # Reconstruct time-domain estimate
-                estimated_complex = mask * torch.exp(1j * phase)
+                estimated_complex = mask * magnitude * torch.exp(1j * phase)
                 estimated_block = torch.fft.irfft(estimated_complex, n=self.block_len)
 
                 # Stage 2: time domain
@@ -459,19 +459,23 @@ class DTLNTrainableModel(EnhancementModel):
         else:
             x_16k = x.copy()
 
-        # Pad to multiple of block_shift
+        # DTLN overlap-add introduces a 384-sample (24 ms) lookback latency.
+        # Pad with 384 tail samples so the full input is processed through the lookback,
+        # and slice output from 384 to achieve sample-for-sample alignment.
+        delay = _DTLN_BLOCK_LEN - _DTLN_BLOCK_SHIFT  # 384 samples
         num_16k = len(x_16k)
-        pad_needed = (_DTLN_BLOCK_SHIFT - (num_16k % _DTLN_BLOCK_SHIFT)) % _DTLN_BLOCK_SHIFT
+        x_padded = np.pad(x_16k, (0, delay + _DTLN_BLOCK_SHIFT))
+        pad_needed = (_DTLN_BLOCK_SHIFT - (len(x_padded) % _DTLN_BLOCK_SHIFT)) % _DTLN_BLOCK_SHIFT
         if pad_needed:
-            x_16k = np.pad(x_16k, (0, pad_needed))
+            x_padded = np.pad(x_padded, (0, pad_needed))
 
         # Process through PyTorch model
         with torch.no_grad():
-            x_tensor = torch.from_numpy(x_16k).float().unsqueeze(0)
+            x_tensor = torch.from_numpy(x_padded).float().unsqueeze(0)
             output_tensor = self._model(x_tensor)
-            output_16k = output_tensor.squeeze(0).numpy().astype(np.float64)
+            raw_output = output_tensor.squeeze(0).numpy().astype(np.float64)
 
-        output_16k = output_16k[:num_16k]
+        output_16k = raw_output[delay : delay + num_16k]
 
         # Resample back
         if self._target_rate != _DTLN_SAMPLE_RATE:

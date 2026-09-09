@@ -42,9 +42,18 @@ def _compute_metrics(
     stoi_val = 0.0
     try:
         from pystoi import stoi
-        stoi_val = float(stoi(clean, enhanced, sample_rate, extended=False))
+        s = float(stoi(clean, enhanced, sample_rate, extended=False))
+        if s > 0.001:
+            stoi_val = s
+        else:
+            from anc.evaluation.metrics import compute_stoi as compute_builtin_stoi
+            stoi_val = float(compute_builtin_stoi(enhanced, clean, sample_rate))
     except (ImportError, Exception):
-        pass
+        try:
+            from anc.evaluation.metrics import compute_stoi as compute_builtin_stoi
+            stoi_val = float(compute_builtin_stoi(enhanced, clean, sample_rate))
+        except Exception:
+            pass
 
     pesq_val = 0.0
     try:

@@ -143,9 +143,18 @@ def run_robustness_sweep(
             stoi_val = 0.0
             try:
                 from pystoi import stoi
-                stoi_val = float(stoi(clean, enhanced, window.sample_rate, extended=False))
+                s = float(stoi(clean, enhanced, window.sample_rate, extended=False))
+                if s > 0.001:
+                    stoi_val = s
+                else:
+                    from anc.evaluation.metrics import compute_stoi as compute_builtin_stoi
+                    stoi_val = float(compute_builtin_stoi(enhanced, clean, window.sample_rate))
             except Exception:
-                pass
+                try:
+                    from anc.evaluation.metrics import compute_stoi as compute_builtin_stoi
+                    stoi_val = float(compute_builtin_stoi(enhanced, clean, window.sample_rate))
+                except Exception:
+                    pass
 
             noise_family = "unknown"
             if window.speech_metadata:

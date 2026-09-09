@@ -224,15 +224,19 @@ class DTLNModel(EnhancementModel):
         else:
             x_16k = x.copy()
 
-        # Pad to multiple of block_shift
+        # DTLN overlap-add introduces a 384-sample (24 ms) lookback latency.
+        # Pad with 384 tail samples so the full input is processed through the lookback,
+        # and slice output from 384 to achieve sample-for-sample alignment.
+        delay = _DTLN_BLOCK_LEN - _DTLN_BLOCK_SHIFT  # 384 samples
         num_16k = len(x_16k)
-        pad_needed = (_DTLN_BLOCK_SHIFT - (num_16k % _DTLN_BLOCK_SHIFT)) % _DTLN_BLOCK_SHIFT
+        x_padded = np.pad(x_16k, (0, delay + _DTLN_BLOCK_SHIFT))
+        pad_needed = (_DTLN_BLOCK_SHIFT - (len(x_padded) % _DTLN_BLOCK_SHIFT)) % _DTLN_BLOCK_SHIFT
         if pad_needed:
-            x_16k = np.pad(x_16k, (0, pad_needed))
+            x_padded = np.pad(x_padded, (0, pad_needed))
 
         # Process through DTLN
-        output_16k = self._process_onnx(x_16k)
-        output_16k = output_16k[:num_16k]
+        raw_output = self._process_onnx(x_padded)
+        output_16k = raw_output[delay : delay + num_16k]
 
         # Resample back
         if self._target_rate != _DTLN_SAMPLE_RATE:
@@ -252,8 +256,8 @@ class DTLNModel(EnhancementModel):
         """Process audio through the two-stage DTLN ONNX pipeline.
 
         Follows the reference implementation from breizhn/DTLN:
-        - Stage 1 (model_1): STFT magnitude → LSTM → magnitude mask
-        - Stage 2 (model_2): estimated time frame → LSTM → enhanced frame
+        - Stage 1 (model_1): STFT magnitude -> LSTM -> magnitude mask
+        - Stage 2 (model_2): estimated time frame -> LSTM -> enhanced frame
         """
         sessions = self._session["sessions"]
         init_inputs = self._session["init_inputs"]
@@ -269,7 +273,7 @@ class DTLNModel(EnhancementModel):
         in_buffer = np.zeros(_DTLN_BLOCK_LEN, dtype=np.float32)
         out_buffer = np.zeros(_DTLN_BLOCK_LEN, dtype=np.float32)
 
-        # LSTM states — initialized from model metadata
+        # LSTM states -- initialized from model metadata
         # model_1 state: [1, 2, 128, 2]  (packed LSTM h+c for 2 layers)
         # model_2 state: [1, 2, 128, 2]
         states_1 = init_inputs[0][inp_names_1[1]].copy()
@@ -288,17 +292,17 @@ class DTLNModel(EnhancementModel):
             in_mag = np.abs(in_block_fft).astype(np.float32)
             in_phase = np.angle(in_block_fft)
 
-            # Run model_1: magnitude → mask
+            # Run model_1: magnitude -> mask
             mag_input = in_mag.reshape(1, 1, _DTLN_NUM_BINS)
             result_1 = sess_1.run(None, {
                 inp_names_1[0]: mag_input,
                 inp_names_1[1]: states_1,
             })
-            estimated_mag = result_1[0]  # [1, 1, 257] — mask * magnitude
+            out_mask = result_1[0]       # [1, 1, 257] mask
             states_1 = result_1[1]       # updated LSTM states
 
-            # Apply mask in STFT domain and reconstruct time-domain estimate
-            estimated_complex = estimated_mag.flatten() * np.exp(1j * in_phase)
+            # Apply mask in STFT domain: mask * in_mag * exp(1j * in_phase)
+            estimated_complex = in_mag * out_mask.flatten() * np.exp(1j * in_phase)
             estimated_block = np.fft.irfft(estimated_complex).astype(np.float32)
 
             # ---- Stage 2: time domain ----

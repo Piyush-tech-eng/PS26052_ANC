@@ -149,6 +149,27 @@ def get_best_available_model(
                 model._ensure_model()
             elif hasattr(model, '_ensure_backend'):
                 model._ensure_backend()
+
+            # Quality sanity gate: prevent deploying collapsed / suppressing models
+            if name in ("dtln_finetuned", "conv_tasnet"):
+                import numpy as np
+                t = np.linspace(0, 0.5, int(sample_rate * 0.5), endpoint=False)
+                # Synthetic speech-like harmonic test tone (220 Hz + 440 Hz)
+                test_sig = 0.3 * np.sin(2 * np.pi * 220 * t) + 0.2 * np.sin(2 * np.pi * 440 * t)
+                test_out = model.enhance(test_sig)
+                rms_in = float(np.sqrt(np.mean(test_sig**2)))
+                rms_out = float(np.sqrt(np.mean(test_out**2)))
+                corr = float(np.corrcoef(test_sig, test_out)[0, 1]) if rms_out > 1e-6 else 0.0
+
+                if rms_out < 0.25 * rms_in or corr < 0.40:
+                    warnings.warn(
+                        f"[model-select] {name}: failed quality sanity gate "
+                        f"(RMS out/in: {rms_out / rms_in:.3f}, corr: {corr:.3f}). "
+                        f"Rejecting collapsed model and falling back to stock model.",
+                        UserWarning,
+                    )
+                    continue
+
             print(f"[model-select] Using model: {model.name}")
             return model
         except Exception as exc:

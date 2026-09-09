@@ -41,6 +41,7 @@ def main() -> None:
     parser.add_argument("--max-epochs", type=int, default=50)
     parser.add_argument("--batch-size", type=int, default=8)
     parser.add_argument("--device", default="cpu")
+    parser.add_argument("--from-onnx", action="store_true", help="Initialize DTLN from ONNX weights.")
 
     args = parser.parse_args()
 
@@ -102,8 +103,12 @@ def main() -> None:
 
         # Create fresh model
         if args.model == "dtln":
-            from ai.models.dtln_trainable import TrainableDTLN
-            model = TrainableDTLN()
+            from ai.models.dtln_trainable import TrainableDTLN, load_from_onnx
+            if args.from_onnx:
+                model_dir = Path("models/dtln")
+                model = load_from_onnx(model_dir / "model_1.onnx", model_dir / "model_2.onnx")
+            else:
+                model = TrainableDTLN()
         else:
             from ai.models.conv_tasnet import ConvTasNet
             model = ConvTasNet()

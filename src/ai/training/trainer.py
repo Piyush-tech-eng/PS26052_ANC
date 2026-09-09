@@ -102,18 +102,19 @@ def _compute_validation_metrics(
 
     Uses real pystoi/pesq when available, falls back to built-in approximations.
     """
-    from anc.evaluation.metrics import compute_noise_reduction_db
+    from anc.evaluation.metrics import compute_noise_reduction_db, compute_stoi as compute_builtin_stoi
 
     model.eval()
     snr_values: list[float] = []
     stoi_values: list[float] = []
     pesq_values: list[float] = []
+    rms_ratios: list[float] = []
     total_loss = 0.0
     n_batches = 0
 
     # Try importing real metrics
     try:
-        from pystoi import stoi as compute_stoi
+        from pystoi import stoi as compute_pystoi
         has_pystoi = True
     except ImportError:
         has_pystoi = False
@@ -124,18 +125,36 @@ def _compute_validation_metrics(
     except ImportError:
         has_pesq = False
 
+    # Account for lookback delay (384 samples for DTLN 512/128 causal STFT)
+    delay = 0
+    if hasattr(model, "block_len") and hasattr(model, "block_shift"):
+        delay = model.block_len - model.block_shift
+    elif hasattr(model, "module") and hasattr(model.module, "block_len"):
+        delay = model.module.block_len - model.module.block_shift
+
     with torch.no_grad():
         for batch in val_loader:
-            noisy = batch["noisy"]
-            clean = batch["clean"]
+            noisy = batch["noisy"].to(next(model.parameters()).device if list(model.parameters()) else "cpu")
+            clean = batch["clean"].to(next(model.parameters()).device if list(model.parameters()) else "cpu")
 
             enhanced = model(noisy)
 
             # Compute loss
             for i in range(noisy.shape[0]):
-                est = enhanced[i].cpu().numpy().astype(np.float64)
-                tgt = clean[i].cpu().numpy().astype(np.float64)
-                nsy = noisy[i].cpu().numpy().astype(np.float64)
+                if delay > 0 and enhanced.shape[1] > delay:
+                    est = enhanced[i, delay:].cpu().numpy().astype(np.float64)
+                    tgt = clean[i, :len(est)].cpu().numpy().astype(np.float64)
+                    nsy = noisy[i, delay:].cpu().numpy().astype(np.float64)
+                else:
+                    est = enhanced[i].cpu().numpy().astype(np.float64)
+                    tgt = clean[i].cpu().numpy().astype(np.float64)
+                    nsy = noisy[i].cpu().numpy().astype(np.float64)
+
+                # Track energy ratio (guards against output collapse / near-silence)
+                rms_est = float(np.sqrt(np.mean(est**2)))
+                rms_tgt = float(np.sqrt(np.mean(tgt**2)))
+                if rms_tgt > 1e-6:
+                    rms_ratios.append(rms_est / rms_tgt)
 
                 # SI-SNR loss component
                 loss = si_snr_loss(est, tgt)
@@ -146,12 +165,21 @@ def _compute_validation_metrics(
                 snr_values.append(snr)
 
                 # STOI (sample up to 50 windows for fast validation tracking)
-                if has_pystoi and len(stoi_values) < 50:
-                    try:
-                        s = compute_stoi(tgt, est, sample_rate, extended=False)
-                        stoi_values.append(float(s))
-                    except Exception:
-                        pass
+                if len(stoi_values) < 50:
+                    s_score = None
+                    if has_pystoi:
+                        try:
+                            val_s = compute_pystoi(tgt, est, sample_rate, extended=False)
+                            if val_s > 0.01:
+                                s_score = float(val_s)
+                        except Exception:
+                            pass
+                    if s_score is None:
+                        try:
+                            s_score = float(compute_builtin_stoi(est, tgt, sample_rate))
+                        except Exception:
+                            s_score = 0.0
+                    stoi_values.append(s_score)
 
                 # PESQ (sample up to 50 windows for fast validation tracking)
                 if has_pesq and len(pesq_values) < 50:
@@ -170,6 +198,7 @@ def _compute_validation_metrics(
         "val_snr": float(np.mean(snr_values)) if snr_values else 0.0,
         "val_stoi": float(np.mean(stoi_values)) if stoi_values else 0.0,
         "val_pesq": float(np.mean(pesq_values)) if pesq_values else 0.0,
+        "val_rms_ratio": float(np.mean(rms_ratios)) if rms_ratios else 1.0,
     }
 
 
@@ -251,11 +280,22 @@ def train_model(
 
             enhanced = model(noisy)
 
+            # Lookback delay alignment (384 samples for DTLN causal 512/128 STFT)
+            delay = 0
+            if hasattr(model, "block_len") and hasattr(model, "block_shift"):
+                delay = model.block_len - model.block_shift
+            elif hasattr(model, "module") and hasattr(model.module, "block_len"):
+                delay = model.module.block_len - model.module.block_shift
+
             # Compute combined loss per sample, then average
             batch_loss = torch.tensor(0.0, device=device, requires_grad=True)
             for i in range(noisy.shape[0]):
-                est = enhanced[i]
-                tgt = clean[i]
+                if delay > 0 and enhanced.shape[1] > delay:
+                    est = enhanced[i, delay:]
+                    tgt = clean[i, :est.shape[0]]
+                else:
+                    est = enhanced[i]
+                    tgt = clean[i]
 
                 # SI-SNR loss (differentiable PyTorch version)
                 tgt_zm = tgt - tgt.mean()
@@ -267,6 +307,7 @@ def train_model(
                 s_energy = torch.dot(s_target, s_target) + 1e-8
                 e_energy = torch.dot(e_noise, e_noise) + 1e-8
                 si_snr = 10.0 * torch.log10(s_energy / e_energy)
+                si_snr = torch.clamp(si_snr, -30.0, 30.0)
                 loss_si_snr = -si_snr
 
                 # L1 loss
@@ -300,6 +341,7 @@ def train_model(
             "val_snr": val_metrics["val_snr"],
             "val_stoi": val_metrics["val_stoi"],
             "val_pesq": val_metrics["val_pesq"],
+            "val_rms_ratio": val_metrics.get("val_rms_ratio", 1.0),
             "learning_rate": current_lr,
             "duration_seconds": epoch_duration,
         }
@@ -311,7 +353,7 @@ def train_model(
             f"Train Loss: {epoch_record['train_loss']:.4f} | "
             f"Val STOI: {val_metrics['val_stoi']:.4f} | "
             f"Val SNR: {val_metrics['val_snr']:.2f} dB | "
-            f"Val PESQ: {val_metrics['val_pesq']:.3f} | "
+            f"Val RMS Ratio: {val_metrics.get('val_rms_ratio', 1.0):.2f} | "
             f"LR: {current_lr:.2e} | "
             f"{epoch_duration:.1f}s"
         )
@@ -319,27 +361,34 @@ def train_model(
         # LR scheduling
         scheduler.step(val_metrics["val_stoi"])
 
-        # Checkpointing on best STOI
-        if val_metrics["val_stoi"] > best_stoi:
-            best_stoi = val_metrics["val_stoi"]
-            best_epoch = epoch
-            epochs_without_improvement = 0
+        # Checkpointing on best STOI with energy sanity gate
+        val_rms_ratio = val_metrics.get("val_rms_ratio", 1.0)
+        is_healthy = val_rms_ratio >= 0.40
 
-            checkpoint = {
-                "epoch": epoch,
-                "model_state_dict": model.state_dict(),
-                "optimizer_state_dict": optimizer.state_dict(),
-                "best_stoi": best_stoi,
-                "config": {
-                    "learning_rate": config.learning_rate,
-                    "si_snr_weight": config.si_snr_weight,
-                    "l1_weight": config.l1_weight,
-                    "stft_weight": config.stft_weight,
-                },
-                "val_metrics": val_metrics,
-            }
-            torch.save(checkpoint, output_path / "best_model.pt")
-            print(f"  [BEST] New best STOI: {best_stoi:.4f} - checkpoint saved.", flush=True)
+        if val_metrics["val_stoi"] > best_stoi:
+            if is_healthy:
+                best_stoi = val_metrics["val_stoi"]
+                best_epoch = epoch
+                epochs_without_improvement = 0
+
+                checkpoint = {
+                    "epoch": epoch,
+                    "model_state_dict": model.state_dict(),
+                    "optimizer_state_dict": optimizer.state_dict(),
+                    "best_stoi": best_stoi,
+                    "config": {
+                        "learning_rate": config.learning_rate,
+                        "si_snr_weight": config.si_snr_weight,
+                        "l1_weight": config.l1_weight,
+                        "stft_weight": config.stft_weight,
+                    },
+                    "val_metrics": val_metrics,
+                }
+                torch.save(checkpoint, output_path / "best_model.pt")
+                print(f"  [BEST] New best STOI: {best_stoi:.4f} (RMS ratio: {val_rms_ratio:.2f}) - checkpoint saved.", flush=True)
+            else:
+                print(f"  [WARNING] High STOI ({val_metrics['val_stoi']:.4f}) but low energy ratio ({val_rms_ratio:.2f} < 0.40) - skipped saving to prevent collapse.", flush=True)
+                epochs_without_improvement += 1
         else:
             epochs_without_improvement += 1
 

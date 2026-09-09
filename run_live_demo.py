@@ -36,6 +36,7 @@ Usage::
 from __future__ import annotations
 
 import argparse
+import json
 import signal
 import socket
 import struct
@@ -52,12 +53,27 @@ from ai.streaming.hybrid_engine import HybridEngine
 from ai.hardware.latency_monitor import LatencyMonitor
 
 
+def _write_status(status_file: str | Path | None, data: dict[str, Any]) -> None:
+    """Safely write telemetry dict to status JSON file."""
+    if not status_file:
+        return
+    try:
+        p = Path(status_file)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        tmp = p.with_suffix(".tmp")
+        tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
+        tmp.replace(p)
+    except Exception:
+        pass
+
+
 def _process_file(
     input_path: str,
     output_path: str,
     model_name: str = "auto",
     no_anc: bool = True,
     sample_rate: int = 16_000,
+    status_file: str | None = None,
 ) -> None:
     """Process a .wav file through the hybrid pipeline."""
     from scipy.io import wavfile
@@ -104,6 +120,22 @@ def _process_file(
     pcm = (enhanced * 32767).clip(-32768, 32767).astype(np.int16)
     wavfile.write(output_path, sample_rate, pcm)
     print(f"  Output: {output_path}")
+
+    # Write status file if requested
+    _write_status(status_file, {
+        "mode": "file",
+        "model": model.name,
+        "input": input_path,
+        "output": output_path,
+        "sample_rate": sample_rate,
+        "duration_s": len(audio) / sample_rate,
+        "process_time_ms": (t1 - t0) * 1000,
+        "realtime_ratio": timing.realtime_ratio,
+        "input_rms": float(np.sqrt(np.mean(audio**2))),
+        "output_rms": float(np.sqrt(np.mean(enhanced**2))),
+        "status": "completed",
+        "timestamp": time.time(),
+    })
 
     # Quick metrics if we have a clean reference nearby
     _try_compute_metrics(audio, enhanced, sample_rate)
@@ -296,6 +328,7 @@ def _run_simulated(
     duration: float = 5.0,
     port: int = 15005,
     no_anc: bool = False,
+    status_file: str | None = None,
 ) -> None:
     """Run an end-to-end simulated hardware live streaming demo.
 
@@ -424,11 +457,38 @@ def _run_simulated(
                     f"RT ratio: {timing.realtime_ratio:.2f}x"
                 )
                 sys.stdout.flush()
+
+                _write_status(status_file, {
+                    "mode": "simulated",
+                    "model": model.name,
+                    "frame_count": frame_count,
+                    "elapsed_seconds": elapsed,
+                    "total_latency_ms": snapshot.total_ms,
+                    "stage_latencies_ms": avg,
+                    "realtime_ratio": timing.realtime_ratio,
+                    "input_rms": float(np.sqrt(np.mean(meas**2))),
+                    "output_rms": float(np.sqrt(np.mean(enhanced**2))),
+                    "sample_rate": sample_rate,
+                    "status": "running",
+                    "timestamp": time.time(),
+                })
     finally:
         sender_running = False
         sender_thread.join(timeout=1.0)
         receiver.stop()
         playback.stop()
+
+        _write_status(status_file, {
+            "mode": "simulated",
+            "model": model.name,
+            "frame_count": frame_count,
+            "elapsed_seconds": time.time() - start_time,
+            "realtime_ratio": timing.realtime_ratio,
+            "sample_rate": sample_rate,
+            "status": "completed",
+            "timestamp": time.time(),
+        })
+
         print(f"\n\nSimulation completed successfully: {frame_count} frames processed in {time.time()-start_time:.1f}s.")
         print(monitor.summary())
 
@@ -471,6 +531,10 @@ def main():
         "--duration", type=float, default=5.0,
         help="Duration in seconds for simulated or loopback mode (default: 5.0)",
     )
+    parser.add_argument(
+        "--status-file", type=str, default=None,
+        help="Path to write JSON status file for dashboard polling",
+    )
 
     args = parser.parse_args()
 
@@ -485,6 +549,7 @@ def main():
             model_name=args.model,
             no_anc=args.no_anc,
             sample_rate=args.sample_rate,
+            status_file=args.status_file,
         )
     elif args.mode == "live":
         _run_live(
@@ -506,6 +571,7 @@ def main():
             duration=args.duration if args.duration > 0 else 5.0,
             port=args.port if args.port != 5005 else 15005,
             no_anc=args.no_anc,
+            status_file=args.status_file,
         )
 
 

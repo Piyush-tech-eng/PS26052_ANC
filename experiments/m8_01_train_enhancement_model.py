@@ -115,6 +115,14 @@ def main() -> None:
         device=args.device,
     )
 
+    import shutil
+    best_ckpt = output_dir / "best_model.pt"
+    if best_ckpt.exists() and args.model == "dtln":
+        target_dir = Path("models/dtln_finetuned")
+        target_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(best_ckpt, target_dir / "best_model.pt")
+        print(f"Copied best model to {target_dir / 'best_model.pt'}")
+
     print(f"\nResults: {results}")
 
 
