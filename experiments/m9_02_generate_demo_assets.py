@@ -190,11 +190,27 @@ def generate_demo_assets(
     sr = 16_000
     duration = 3.0  # 3-second clips for demo
 
-    # Generate speech samples
-    speakers = [
-        generate_synthetic_speech(sr, duration, speaker_id=f"demo_spk_{i}", seed=i * 10)
-        for i in range(3)
-    ]
+    # Load speech samples (prefer real LibriSpeech if available)
+    from anc.speech.sources import load_librispeech, SpeechSample
+    ls_dir = Path("data/corpora/librispeech")
+    speakers = []
+    if ls_dir.exists():
+        real_spks = load_librispeech(ls_dir, target_sr=sr, max_samples=3)
+        for i, s in enumerate(real_spks):
+            n_samples = int(sr * duration)
+            audio = s.audio[:n_samples] if len(s.audio) >= n_samples else np.pad(s.audio, (0, n_samples - len(s.audio)))
+            speakers.append(SpeechSample(
+                audio=audio,
+                sampling_rate=sr,
+                source_id=s.source_id,
+                speaker_id=f"librispeech_{s.speaker_id}",
+                provenance=s.provenance,
+            ))
+    if not speakers:
+        speakers = [
+            generate_synthetic_speech(sr, duration, speaker_id=f"demo_spk_{i}", seed=i * 10)
+            for i in range(3)
+        ]
 
     # Generate noise samples from different families
     noises = [

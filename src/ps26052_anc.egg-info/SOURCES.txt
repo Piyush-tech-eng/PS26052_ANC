@@ -28,6 +28,7 @@ src/ai/training/trainer.py
 src/anc/__main__.py
 src/anc/cli.py
 src/anc/cli_process.py
+src/anc/dashboard.py
 src/anc/demo.py
 src/anc/adaptive/__init__.py
 src/anc/adaptive/convergence.py

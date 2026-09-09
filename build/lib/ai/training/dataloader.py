@@ -131,6 +131,7 @@ def create_dataloaders(
     batch_size: int = 16,
     num_workers: int = 0,
     augment_train: bool = True,
+    apply_norm: bool = False,
     seed: int = 42,
 ) -> dict[str, Any]:
     """Create train/validation/test DataLoaders from a saved dataset.
@@ -145,6 +146,9 @@ def create_dataloaders(
         Number of data loading workers.
     augment_train : bool
         Whether to augment training data.
+    apply_norm : bool
+        Whether to apply z-score normalization to audio. Default is False
+        to keep audio in raw [-1, 1] range for models like DTLN.
     seed : int
         Random seed.
 
@@ -167,7 +171,7 @@ def create_dataloaders(
         dataset = PS26052Dataset(
             windows,
             normalization,
-            apply_norm=True,
+            apply_norm=apply_norm,
             augment=(split_name == "train" and augment_train),
             seed=seed,
         )
