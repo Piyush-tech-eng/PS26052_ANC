@@ -180,7 +180,8 @@ class DTLNModel(EnhancementModel):
                     dim if isinstance(dim, int) else 1
                     for dim in inp.shape
                 ]
-                inputs[inp.name] = np.zeros(shape, dtype=np.float32)
+                inp_dtype = np.float16 if "float16" in inp.type else np.float32
+                inputs[inp.name] = np.zeros(shape, dtype=inp_dtype)
             init_inputs.append(inputs)
 
         self._session = {
@@ -265,6 +266,8 @@ class DTLNModel(EnhancementModel):
         sess_1, sess_2 = sessions[0], sessions[1]
         inp_names_1 = [inp.name for inp in sess_1.get_inputs()]
         inp_names_2 = [inp.name for inp in sess_2.get_inputs()]
+        dtype_1 = np.float16 if "float16" in sess_1.get_inputs()[0].type else np.float32
+        dtype_2 = np.float16 if "float16" in sess_2.get_inputs()[0].type else np.float32
 
         num_blocks = len(x) // _DTLN_BLOCK_SHIFT
         output = np.zeros(len(x), dtype=np.float32)
@@ -293,26 +296,26 @@ class DTLNModel(EnhancementModel):
             in_phase = np.angle(in_block_fft)
 
             # Run model_1: magnitude -> mask
-            mag_input = in_mag.reshape(1, 1, _DTLN_NUM_BINS)
+            mag_input = in_mag.reshape(1, 1, _DTLN_NUM_BINS).astype(dtype_1)
             result_1 = sess_1.run(None, {
                 inp_names_1[0]: mag_input,
                 inp_names_1[1]: states_1,
             })
-            out_mask = result_1[0]       # [1, 1, 257] mask
-            states_1 = result_1[1]       # updated LSTM states
+            out_mask = result_1[0].astype(np.float32)       # [1, 1, 257] mask
+            states_1 = result_1[1]                         # updated LSTM states
 
             # Apply mask in STFT domain: mask * in_mag * exp(1j * in_phase)
             estimated_complex = in_mag * out_mask.flatten() * np.exp(1j * in_phase)
             estimated_block = np.fft.irfft(estimated_complex).astype(np.float32)
 
             # ---- Stage 2: time domain ----
-            est_input = estimated_block.reshape(1, 1, _DTLN_BLOCK_LEN)
+            est_input = estimated_block.reshape(1, 1, _DTLN_BLOCK_LEN).astype(dtype_2)
             result_2 = sess_2.run(None, {
                 inp_names_2[0]: est_input,
                 inp_names_2[1]: states_2,
             })
-            out_block = result_2[0].flatten()  # [512] enhanced frame
-            states_2 = result_2[1]             # updated LSTM states
+            out_block = result_2[0].astype(np.float32).flatten()  # [512] enhanced frame
+            states_2 = result_2[1]                               # updated LSTM states
 
             # Overlap-add output
             out_buffer[:-_DTLN_BLOCK_SHIFT] = out_buffer[_DTLN_BLOCK_SHIFT:]

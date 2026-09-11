@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "ps26052-anc"
-version = "0.2.0"
+version = "0.3.0"
 description = "AI-driven Adaptive Noise Cancellation for Defence Communications"
 requires-python = ">=3.10"
 dependencies = [
@@ -40,6 +40,32 @@ export = [
     "onnx>=1.14",
     "onnxruntime>=1.16",
 ]
+# Execution profile dependency groups
+prototype = [
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "onnxruntime>=1.16",
+    "sounddevice>=0.4",
+]
+edge = [
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "onnxruntime>=1.16",
+    "pyaudio>=0.2.13",
+]
+development = [
+    "numpy>=1.26",
+    "scipy>=1.11",
+    "matplotlib>=3.8",
+    "onnxruntime>=1.16",
+    "pystoi>=0.4",
+    "soundfile>=0.12",
+    "torch>=2.0",
+    "torchaudio>=2.0",
+    "onnx>=1.14",
+    "pyaudio>=0.2.13",
+    "sounddevice>=0.4",
+]
 full = [
     "onnxruntime>=1.16",
     "pystoi>=0.4",
@@ -57,6 +83,7 @@ anc = "anc.cli:main"
 anc-demo = "anc.cli:main"
 anc-process = "anc.cli_process:main"
 anc-dashboard = "anc.dashboard:main"
+anc-app = "anc.interface.server:main"
 
 
 [tool.setuptools.packages.find]

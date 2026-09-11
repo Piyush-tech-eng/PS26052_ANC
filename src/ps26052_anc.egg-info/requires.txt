@@ -7,6 +7,25 @@ onnxruntime>=1.16
 pystoi>=0.4
 soundfile>=0.12
 
+[development]
+numpy>=1.26
+scipy>=1.11
+matplotlib>=3.8
+onnxruntime>=1.16
+pystoi>=0.4
+soundfile>=0.12
+torch>=2.0
+torchaudio>=2.0
+onnx>=1.14
+pyaudio>=0.2.13
+sounddevice>=0.4
+
+[edge]
+numpy>=1.26
+scipy>=1.11
+onnxruntime>=1.16
+pyaudio>=0.2.13
+
 [export]
 onnx>=1.14
 onnxruntime>=1.16
@@ -27,6 +46,12 @@ sounddevice>=0.4
 
 [metrics]
 pystoi>=0.4
+
+[prototype]
+numpy>=1.26
+scipy>=1.11
+onnxruntime>=1.16
+sounddevice>=0.4
 
 [training]
 torch>=2.0

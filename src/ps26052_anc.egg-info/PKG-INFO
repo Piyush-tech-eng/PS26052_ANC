@@ -1,6 +1,6 @@
 Metadata-Version: 2.4
 Name: ps26052-anc
-Version: 0.2.0
+Version: 0.3.0
 Summary: AI-driven Adaptive Noise Cancellation for Defence Communications
 Requires-Python: >=3.10
 Requires-Dist: numpy>=1.26
@@ -24,6 +24,28 @@ Requires-Dist: sounddevice>=0.4; extra == "hardware"
 Provides-Extra: export
 Requires-Dist: onnx>=1.14; extra == "export"
 Requires-Dist: onnxruntime>=1.16; extra == "export"
+Provides-Extra: prototype
+Requires-Dist: numpy>=1.26; extra == "prototype"
+Requires-Dist: scipy>=1.11; extra == "prototype"
+Requires-Dist: onnxruntime>=1.16; extra == "prototype"
+Requires-Dist: sounddevice>=0.4; extra == "prototype"
+Provides-Extra: edge
+Requires-Dist: numpy>=1.26; extra == "edge"
+Requires-Dist: scipy>=1.11; extra == "edge"
+Requires-Dist: onnxruntime>=1.16; extra == "edge"
+Requires-Dist: pyaudio>=0.2.13; extra == "edge"
+Provides-Extra: development
+Requires-Dist: numpy>=1.26; extra == "development"
+Requires-Dist: scipy>=1.11; extra == "development"
+Requires-Dist: matplotlib>=3.8; extra == "development"
+Requires-Dist: onnxruntime>=1.16; extra == "development"
+Requires-Dist: pystoi>=0.4; extra == "development"
+Requires-Dist: soundfile>=0.12; extra == "development"
+Requires-Dist: torch>=2.0; extra == "development"
+Requires-Dist: torchaudio>=2.0; extra == "development"
+Requires-Dist: onnx>=1.14; extra == "development"
+Requires-Dist: pyaudio>=0.2.13; extra == "development"
+Requires-Dist: sounddevice>=0.4; extra == "development"
 Provides-Extra: full
 Requires-Dist: onnxruntime>=1.16; extra == "full"
 Requires-Dist: pystoi>=0.4; extra == "full"

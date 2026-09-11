@@ -34,6 +34,7 @@ def capture_and_stream(
     channels: int = 2,
     frame_ms: int = 20,
     device_index: int | None = None,
+    ch0_is_reference: bool = False,
 ) -> None:
     """Capture audio from the ReSpeaker HAT and stream via UDP.
 
@@ -51,6 +52,8 @@ def capture_and_stream(
         Frame duration in milliseconds (20-40 ms recommended).
     device_index : int, optional
         ALSA device index for the ReSpeaker. If None, uses default.
+    ch0_is_reference : bool
+        If True, flags channel 0 as reference mic (bit 0 in packet flags).
     """
     try:
         import pyaudio
@@ -61,11 +64,14 @@ def capture_and_stream(
         sys.exit(1)
 
     samples_per_frame = int(sample_rate * frame_ms / 1000)
+    flags = 1 if ch0_is_reference else 0
+
     print(f"Capture config:")
     print(f"  Target:     {host}:{port}")
     print(f"  Rate:       {sample_rate} Hz")
     print(f"  Channels:   {channels}")
     print(f"  Frame:      {frame_ms} ms ({samples_per_frame} samples)")
+    print(f"  Ch0 is Ref: {ch0_is_reference} (flags=0x{flags:04x})")
 
     pa = pyaudio.PyAudio()
 
@@ -104,8 +110,8 @@ def capture_and_stream(
             data = stream.read(samples_per_frame, exception_on_overflow=False)
             pcm = np.frombuffer(data, dtype=np.int16)
 
-            # Build UDP packet: header + PCM payload
-            header = struct.pack(">III", seq, channels, samples_per_frame)
+            # Build extended UDP packet: 16-byte header + PCM payload
+            header = struct.pack(">IIII", seq, channels, samples_per_frame, flags)
             packet = header + pcm.tobytes()
 
             sock.sendto(packet, (host, port))
@@ -152,6 +158,10 @@ if __name__ == "__main__":
         "--device", type=int, default=None,
         help="ALSA device index (default: auto-detect ReSpeaker)",
     )
+    parser.add_argument(
+        "--ch0-is-reference", action="store_true",
+        help="Flag channel 0 as reference mic (default: channel 1 is reference)",
+    )
     args = parser.parse_args()
 
     capture_and_stream(
@@ -161,4 +171,5 @@ if __name__ == "__main__":
         channels=args.channels,
         frame_ms=args.frame_ms,
         device_index=args.device,
+        ch0_is_reference=args.ch0_is_reference,
     )

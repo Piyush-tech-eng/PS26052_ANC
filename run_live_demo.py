@@ -1,368 +1,126 @@
 #!/usr/bin/env python3
-"""PS26052 ANC — Live Demo Orchestration Entrypoint.
+"""PS26052 ANC — Unified Live Demonstration Entrypoint.
 
-Wires together all streaming/hardware components into a single runnable
-demo script:
+Demonstrates the two-microphone adaptive noise cancellation system across 4
+operational modes with real-time telemetry streaming to the operator dashboard.
 
-    UDPReceiver (from Pi)
-        → HybridEngine (classical ANC + AI enhancement)
-        → AudioPlayback (sounddevice or file fallback)
-
-With LatencyMonitor and LiveMetricsOverlay attached for real-time display.
-
-Modes
------
-- ``live``:     Listen for UDP packets from the Raspberry Pi, process and
-                play back in real time.
-- ``file``:     Process a local .wav file through the full pipeline and
-                write the enhanced output to disk.
-- ``loopback``: Capture from the default microphone, enhance, and play
-                back — useful for demos without hardware.
+Demonstration Modes:
+1. offline (file):
+   Process WAV files through the streaming pipeline frame-by-frame,
+   recording telemetry and saving enhanced audio.
+2. laptop-live (loopback):
+   Continuous capture from laptop microphone -> Hybrid Engine -> speakers/headphones.
+3. pi-prototype (live):
+   Receive dual-channel UDP stream from Raspberry Pi ReSpeaker 2-Mic HAT,
+   execute two-stage classical FxNLMS + AI enhancement on laptop, output audio.
+4. pi-edge (simulated):
+   Edge demonstration running on-device FxNLMS + quantized INT8 AI.
 
 Usage::
 
-    # Live mode (Pi must be streaming)
-    python run_live_demo.py --mode live --port 5005
+    # 1. Offline file processing
+    python run_live_demo.py --mode offline --input sample.wav --output enhanced.wav
 
-    # Process a file
-    python run_live_demo.py --mode file \\
-        --input results/demo_assets/wav/demo_0_rotor_snr+0_noisy.wav \\
-        --output enhanced_output.wav
+    # 2. Laptop live microphone demonstration
+    python run_live_demo.py --mode laptop-live --duration 10
 
-    # Loopback (mic → enhance → speaker)
-    python run_live_demo.py --mode loopback
+    # 3. Raspberry Pi 3 hardware demonstration
+    python run_live_demo.py --mode pi-prototype --port 5005
+
+    # 4. On-Pi Edge demonstration
+    python run_live_demo.py --mode pi-edge --duration 10
 """
 
 from __future__ import annotations
 
 import argparse
-import json
+import os
 import signal
-import socket
-import struct
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
 import numpy as np
 
-sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
+# Ensure repo root and src are on path
+repo_root = Path(__file__).resolve().parent
+sys.path.insert(0, str(repo_root))
+sys.path.insert(0, str(repo_root / "src"))
 
 from ai.models import get_best_available_model
 from ai.streaming.hybrid_engine import HybridEngine
-from ai.hardware.latency_monitor import LatencyMonitor
+from anc.realtime.audio_input import AudioInput, AudioFrame, WAVInput, LaptopMicInput, RaspberryPiInput
+from anc.realtime.audio_output import AudioOutput, WAVOutput, LaptopSpeakerOutput
+from anc.realtime.streaming_pipeline import StreamingPipeline
+from anc.realtime.telemetry import TelemetryCollector, PipelineTelemetry
 
 
-def _write_status(status_file: str | Path | None, data: dict[str, Any]) -> None:
-    """Safely write telemetry dict to status JSON file."""
-    if not status_file:
-        return
-    try:
-        p = Path(status_file)
-        p.parent.mkdir(parents=True, exist_ok=True)
-        tmp = p.with_suffix(".tmp")
-        tmp.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
-        tmp.replace(p)
-    except Exception:
-        pass
+def _find_default_input_wav() -> Path | None:
+    """Find a suitable default demo WAV file in the workspace."""
+    candidates = [
+        repo_root / "results" / "demo_assets" / "wav" / "demo_0_rotor_snr+0_noisy.wav",
+        repo_root / "results" / "demo_assets" / "wav" / "demo_1_alarm_snr+5_noisy.wav",
+    ]
+    for c in candidates:
+        if c.exists():
+            return c
+    return None
 
 
-def _process_file(
-    input_path: str,
-    output_path: str,
-    model_name: str = "auto",
-    no_anc: bool = True,
-    sample_rate: int = 16_000,
-    status_file: str | None = None,
-) -> None:
-    """Process a .wav file through the hybrid pipeline."""
-    from scipy.io import wavfile
-
-    sr_file, raw = wavfile.read(input_path)
-    if raw.dtype == np.int16:
-        audio = raw.astype(np.float64) / 32768.0
-    elif raw.dtype == np.float32:
-        audio = raw.astype(np.float64)
-    else:
-        audio = raw.astype(np.float64)
-
-    # If stereo, take first channel
-    if audio.ndim > 1:
-        audio = audio[:, 0]
-
-    # Resample if needed
-    if sr_file != sample_rate:
-        from anc.speech.resampling import resample_audio
-        audio = resample_audio(audio, sr_file, sample_rate)
-
-    print(f"Input:  {input_path}")
-    print(f"  Rate: {sr_file} Hz -> {sample_rate} Hz")
-    print(f"  Duration: {len(audio)/sample_rate:.2f}s ({len(audio)} samples)")
-
-    # Build engine
-    model = get_best_available_model(prefer=model_name, sample_rate=sample_rate)
-    engine = HybridEngine(
-        model=model,
-        sample_rate=sample_rate,
-    )
-
-    # Process
-    t0 = time.perf_counter()
-    enhanced, timing = engine.process_batch(audio)
-    t1 = time.perf_counter()
-
-    print(f"\nProcessing complete:")
-    print(f"  Model: {model.name}")
-    print(f"  Processing time: {(t1-t0)*1000:.0f} ms")
-    print(f"  Real-time ratio: {timing.realtime_ratio:.2f}x")
-
-    # Write output
-    pcm = (enhanced * 32767).clip(-32768, 32767).astype(np.int16)
-    wavfile.write(output_path, sample_rate, pcm)
-    print(f"  Output: {output_path}")
-
-    # Write status file if requested
-    _write_status(status_file, {
-        "mode": "file",
-        "model": model.name,
-        "input": input_path,
-        "output": output_path,
-        "sample_rate": sample_rate,
-        "duration_s": len(audio) / sample_rate,
-        "process_time_ms": (t1 - t0) * 1000,
-        "realtime_ratio": timing.realtime_ratio,
-        "input_rms": float(np.sqrt(np.mean(audio**2))),
-        "output_rms": float(np.sqrt(np.mean(enhanced**2))),
-        "status": "completed",
-        "timestamp": time.time(),
-    })
-
-    # Quick metrics if we have a clean reference nearby
-    _try_compute_metrics(audio, enhanced, sample_rate)
-
-
-def _try_compute_metrics(noisy, enhanced, sr):
-    """If possible, compute and display basic metrics."""
-    from anc.evaluation.metrics import compute_si_snr, compute_stoi_standard
-
-    # We don't have a clean reference in file mode, but we can show
-    # relative change metrics
-    rms_before = float(np.sqrt(np.mean(noisy**2)))
-    rms_after = float(np.sqrt(np.mean(enhanced**2)))
-    print(f"\n  RMS before: {rms_before:.4f}")
-    print(f"  RMS after:  {rms_after:.4f}")
-    print(f"  Reduction:  {20*np.log10(rms_after/(rms_before+1e-10)):+.1f} dB")
-
-
-def _run_live(
+def run_demo(
+    mode: str = "offline",
+    input_file: str | None = None,
+    output_file: str | None = None,
+    host: str = "0.0.0.0",
     port: int = 5005,
     model_name: str = "auto",
-    no_anc: bool = True,
-    sample_rate: int = 16_000,
-) -> None:
-    """Run the live UDP → enhance → playback pipeline."""
-    from ai.hardware.udp_receiver import UDPReceiver
-    from ai.hardware.playback import AudioPlayback
-
-    model = get_best_available_model(prefer=model_name, sample_rate=sample_rate)
-    engine = HybridEngine(model=model, sample_rate=sample_rate)
-    monitor = LatencyMonitor()
-
-    receiver = UDPReceiver(port=port, sample_rate=sample_rate)
-    playback = AudioPlayback(sample_rate=sample_rate)
-
-    # Graceful shutdown
-    running = True
-
-    def _signal_handler(sig, frame):
-        nonlocal running
-        running = False
-        print("\n\nShutting down...")
-
-    signal.signal(signal.SIGINT, _signal_handler)
-
-    print(f"\n{'='*60}")
-    print(f"PS26052 ANC -- LIVE DEMO")
-    print(f"{'='*60}")
-    print(f"  Model:       {model.name}")
-    print(f"  Sample rate: {sample_rate} Hz")
-    print(f"  UDP port:    {port}")
-    print(f"  ANC:         {'OFF (AI-only)' if no_anc else 'ON'}")
-    print(f"\nWaiting for audio from Raspberry Pi...")
-    print(f"Press Ctrl+C to stop.\n")
-
-    receiver.start()
-    playback.start()
-
-    frame_count = 0
-    try:
-        while running:
-            frame = receiver.get_frame(timeout=0.1)
-            if frame is None:
-                continue
-
-            monitor.begin()
-
-            # Get measured audio (channel 0)
-            measured = frame["channels"][0] if "channels" in frame else frame.get("audio", np.zeros(320))
-            measured = np.asarray(measured, dtype=np.float64).ravel()
-
-            monitor.mark("receive")
-
-            # Process through hybrid engine
-            enhanced, timing = engine.process_frame(measured)
-            monitor.mark("enhance")
-
-            # Send to playback
-            playback.write(enhanced)
-            monitor.mark("playback")
-
-            snapshot = monitor.end()
-            frame_count += 1
-
-            # Print status every ~1 second
-            if frame_count % (sample_rate // max(len(measured), 1)) == 0:
-                avg = monitor.average_ms
-                sys.stdout.write(
-                    f"\r  Frames: {frame_count} | "
-                    f"Latency: {snapshot.total_ms:.1f}ms "
-                    f"(recv={avg.get('receive',0):.1f} "
-                    f"enh={avg.get('enhance',0):.1f} "
-                    f"play={avg.get('playback',0):.1f}) | "
-                    f"RT ratio: {timing.realtime_ratio:.2f}x"
-                )
-                sys.stdout.flush()
-    finally:
-        receiver.stop()
-        playback.stop()
-        print(f"\n\nProcessed {frame_count} frames.")
-        print(monitor.summary())
-
-
-def _run_loopback(
-    model_name: str = "auto",
+    no_anc: bool = False,
     sample_rate: int = 16_000,
     duration: float = 0.0,
+    status_file: str | None = "results/demo_status.json",
+    ch0_is_reference: bool = False,
+    calibrate: bool = False,
 ) -> None:
-    """Capture from mic, enhance, play back — no hardware needed."""
+    """Execute the ANC demonstration in the specified mode."""
+    # Normalize mode aliases
+    mode_map = {
+        "file": "offline",
+        "loopback": "laptop-live",
+        "live": "pi-prototype",
+        "simulated": "pi-edge",
+    }
+    canon_mode = mode_map.get(mode.lower(), mode.lower())
+
+    ref_channel = 0 if ch0_is_reference else 1
+    err_channel = 1 if ch0_is_reference else 0
+
+    print(f"\n{'='*75}")
+    print(f"PS26052 ANC - LIVE DEMONSTRATION ORCHESTRATOR")
+    print(f"{'='*75}")
+    print(f"  Mode:             {canon_mode.upper()} (requested: {mode})")
+    print(f"  Sample Rate:      {sample_rate} Hz (20 ms / 320 samples per frame)")
+    print(f"  Channel Mapping:  Ref = Ch{ref_channel}, Err = Ch{err_channel}")
+    print(f"  Classical ANC:    {'DISABLED (AI-only)' if no_anc else 'ENABLED (FxNLMS 64-tap)'}")
+    print(f"  AI Model:         {model_name.upper()}")
+    if status_file:
+        print(f"  Dashboard Status: {status_file}")
+    print(f"{'='*75}\n")
+
+    # Select AI Enhancement model
     model = get_best_available_model(prefer=model_name, sample_rate=sample_rate)
-    engine = HybridEngine(model=model, sample_rate=sample_rate)
-    monitor = LatencyMonitor()
+    print(f"[Engine] Selected AI Model: {model.name}")
 
-    try:
-        import sounddevice as sd
-    except ImportError:
-        print("ERROR: sounddevice is required for loopback mode.")
-        print("  pip install sounddevice")
-        sys.exit(1)
-
-    block_size = 512
-    running = True
-
-    def _signal_handler(sig, frame):
-        nonlocal running
-        running = False
-
-    signal.signal(signal.SIGINT, _signal_handler)
-
-    print(f"\n{'='*60}")
-    print(f"PS26052 ANC -- LOOPBACK DEMO")
-    print(f"{'='*60}")
-    print(f"  Model:       {model.name}")
-    print(f"  Sample rate: {sample_rate} Hz")
-    print(f"  Block size:  {block_size}")
-    if duration > 0:
-        print(f"  Duration:    {duration}s")
-    print(f"\nListening on default mic... Press Ctrl+C to stop.\n")
-
-    frame_count = 0
-    start_time = time.time()
-
-    def _callback(indata, outdata, frames, time_info, status):
-        nonlocal frame_count
-        if status:
-            print(f"  [audio status: {status}]")
-
-        mono = indata[:, 0].astype(np.float64)
-        enhanced, timing = engine.process_frame(mono)
-
-        # Write to output
-        out = enhanced[:frames]
-        if len(out) < frames:
-            out = np.pad(out, (0, frames - len(out)))
-        outdata[:, 0] = out.astype(np.float32)
-
-        frame_count += 1
-
-    with sd.Stream(
-        samplerate=sample_rate,
-        blocksize=block_size,
-        channels=1,
-        dtype="float32",
-        callback=_callback,
-    ):
-        while running:
-            time.sleep(0.1)
-            elapsed = time.time() - start_time
-
-            if frame_count % 10 == 0 and frame_count > 0:
-                latest = engine.latest_timing
-                if latest:
-                    sys.stdout.write(
-                        f"\r  Frames: {frame_count} | "
-                        f"Elapsed: {elapsed:.0f}s | "
-                        f"Latency: {latest.total_ms:.1f}ms | "
-                        f"RT ratio: {latest.realtime_ratio:.2f}x"
-                    )
-                    sys.stdout.flush()
-
-            if 0 < duration <= elapsed:
-                break
-
-    print(f"\n\nProcessed {frame_count} frames in {time.time()-start_time:.1f}s.")
-
-
-def _run_simulated(
-    model_name: str = "auto",
-    sample_rate: int = 16_000,
-    duration: float = 5.0,
-    port: int = 15005,
-    no_anc: bool = False,
-    status_file: str | None = None,
-) -> None:
-    """Run an end-to-end simulated hardware live streaming demo.
-
-    Simulates the Raspberry Pi 3 capture node streaming dual-channel audio
-    (speech + nonstationary rotor/engine noise) over UDP to localhost, while
-    the laptop processes it through the complete UDPReceiver -> Jitter Buffer ->
-    HybridEngine (FxNLMS + DTLN) -> AudioPlayback cascade.
-    """
-    import threading
-    from ai.hardware.playback import AudioPlayback
-    from ai.hardware.udp_receiver import UDPReceiver
+    # Build Hybrid Engine
     from ai.streaming.frame_anc import FrameANCConfig
-
-    print(f"\n{'='*65}")
-    print("PS26052 ANC -- SIMULATED HARDWARE LIVE STREAMING DEMO")
-    print(f"{'='*65}")
-    print(f"  Sample Rate:     {sample_rate} Hz")
-    print(f"  Target Duration: {duration:.1f} s")
-    print(f"  Transport:       Simulated UDP Loopback (port {port})")
-
-    model = get_best_available_model(prefer=model_name, sample_rate=sample_rate)
-    print(f"  Model:           {model.name}")
-
     anc_cfg = None
     sec_true = None
     sec_model = None
     if not no_anc:
         anc_cfg = FrameANCConfig(filter_length=64, step_size=0.01)
-        sec_true = np.zeros(64)
+        sec_true = np.zeros(64, dtype=np.float64)
         sec_true[0] = 1.0
         sec_model = sec_true.copy()
-        print("  Classical ANC:   Enabled (Streaming FxNLMS, length=64)")
-    else:
-        print("  Classical ANC:   Disabled (AI-only enhancement)")
 
     engine = HybridEngine(
         model=model,
@@ -371,208 +129,197 @@ def _run_simulated(
         secondary_path_model=sec_model,
         sample_rate=sample_rate,
     )
-    monitor = LatencyMonitor()
-    receiver = UDPReceiver(port=port, sample_rate=sample_rate, jitter_buffer_depth=1)
-    playback = AudioPlayback(sample_rate=sample_rate)
 
-    receiver.start()
-    playback.start()
+    # Build Telemetry Collector
+    telemetry = TelemetryCollector(
+        mode=canon_mode,
+        sample_rate=sample_rate,
+        frame_size=int(sample_rate * 0.02),
+        status_file=Path(status_file) if status_file else None,
+        write_interval=0.25,
+    )
+    model_path_str = str(getattr(model, "_model_path", ""))
+    telemetry.set_model_precision("int8" if "quantized" in model_path_str else "fp32")
 
-    frame_samples = 320  # 20ms at 16kHz
-    t_frame = np.arange(frame_samples) / sample_rate
-    sender_running = True
+    # Construct AudioInput and AudioOutput based on mode
+    audio_in: AudioInput
+    audio_out: AudioOutput
 
-    def _simulated_pi_sender():
-        seq = 0
-        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        t_global = 0.0
-        dt = frame_samples / sample_rate
-        rng = np.random.default_rng(42)
-        while sender_running:
-            t = t_global + t_frame
-            # Speech: harmonics at 150, 300, 450 Hz
-            speech = 0.35 * np.sin(2 * np.pi * 150.0 * t) + 0.18 * np.sin(2 * np.pi * 300.0 * t)
-            # Noise: 50 Hz rotor harmonics + broadband turbulence
-            noise = 0.45 * np.sin(2 * np.pi * 50.0 * t) + 0.25 * np.sin(2 * np.pi * 100.0 * t) + 0.08 * rng.standard_normal(frame_samples)
-            # Channel 0: Error/primary mic (speech + noise)
-            # Channel 1: Reference mic (noise only)
-            audio = np.column_stack([speech + noise, noise])
-            pcm = (audio * 32767).clip(-32768, 32767).astype(np.int16)
-            header = struct.pack(">III", seq, 2, frame_samples)
-            packet = header + pcm.tobytes()
-            try:
-                sock.sendto(packet, ("127.0.0.1", port))
-            except Exception:
-                pass
-            seq += 1
-            t_global += dt
-            time.sleep(dt * 0.95)
-        sock.close()
+    if canon_mode == "offline":
+        in_path = input_file or _find_default_input_wav()
+        if not in_path:
+            raise FileNotFoundError("No input WAV specified and no default demo WAV found in results/demo_assets/wav/")
+        out_path = output_file or str(Path(in_path).with_stem(Path(in_path).stem + "_enhanced"))
+        print(f"[Audio] Input WAV:  {in_path}")
+        print(f"[Audio] Output WAV: {out_path}")
 
-    sender_thread = threading.Thread(target=_simulated_pi_sender, daemon=True)
-    sender_thread.start()
+        audio_in = WAVInput(
+            path=in_path,
+            target_sample_rate=sample_rate,
+            reference_channel=ref_channel,
+            error_channel=err_channel,
+            realtime=False,
+        )
+        audio_out = WAVOutput(path=out_path, sample_rate=sample_rate)
 
-    start_time = time.time()
-    frame_count = 0
-    print("\nStreaming live audio frames through hybrid pipeline...")
+    elif canon_mode == "laptop-live":
+        print("[Audio] Initializing Laptop Microphone Input...")
+        audio_in = LaptopMicInput(sample_rate=sample_rate, frame_ms=20)
+        audio_out = LaptopSpeakerOutput(sample_rate=sample_rate)
 
-    try:
-        while time.time() - start_time < duration:
-            frame = receiver.get_frame()
-            if frame is None:
-                time.sleep(0.005)
-                continue
+    elif canon_mode == "pi-prototype":
+        print(f"[Audio] Listening for Pi UDP packets on {host}:{port}...")
+        if calibrate:
+            print("[Calibration] Running 2-second ambient channel calibration...")
+            from ai.hardware.udp_receiver import UDPReceiver
+            temp_rx = UDPReceiver(host=host, port=port, sample_rate=sample_rate, reference_channel=ref_channel, error_channel=err_channel)
+            temp_rx.start()
+            cal = temp_rx.calibrate_channels(duration_seconds=2.0)
+            temp_rx.stop()
+            print(f"[Calibration] RMS Ratio: {cal.get('rms_ratio', 1.0):.2f}, Recommended gain: {cal.get('recommended_gain', 1.0):.2f}")
 
-            monitor.begin()
-            audio_data = frame["audio"]
-            if audio_data.ndim == 2 and audio_data.shape[1] >= 2:
-                meas = audio_data[:, 0]
-                ref = audio_data[:, 1]
-            else:
-                meas = audio_data.ravel()
-                ref = None
+        audio_in = RaspberryPiInput(
+            host=host,
+            port=port,
+            sample_rate=sample_rate,
+            reference_channel=ref_channel,
+            error_channel=err_channel,
+        )
+        audio_out = LaptopSpeakerOutput(sample_rate=sample_rate)
 
-            monitor.mark("receive")
+    elif canon_mode == "pi-edge":
+        print(f"[Audio] Edge demonstration mode (Pi-3 Simulation)...")
+        # Generate or use WAV in real-time simulation pace
+        in_path = input_file or _find_default_input_wav()
+        if in_path and Path(in_path).exists():
+            audio_in = WAVInput(path=in_path, target_sample_rate=sample_rate, realtime=True)
+        else:
+            # Synthetic 300 Hz drone rotor + speech
+            t = np.arange(int(sample_rate * (duration if duration > 0 else 5.0))) / sample_rate
+            synth = 0.4 * np.sin(2 * np.pi * 300 * t) + 0.1 * np.random.randn(len(t))
+            synth_pcm = (synth * 16384).astype(np.int16)
+            tmp_wav = Path("results/scratch_edge.wav")
+            tmp_wav.parent.mkdir(parents=True, exist_ok=True)
+            from scipy.io import wavfile
+            wavfile.write(str(tmp_wav), sample_rate, synth_pcm)
+            audio_in = WAVInput(path=tmp_wav, target_sample_rate=sample_rate, realtime=True)
 
-            if engine.has_anc and ref is not None:
-                enhanced, timing = engine.process_frame(measured=meas, reference=ref)
-            else:
-                enhanced, timing = engine.process_frame(measured=meas)
+        out_path = output_file or "results/demo_output.wav"
+        audio_out = WAVOutput(path=out_path, sample_rate=sample_rate)
 
-            monitor.mark("enhance")
-            playback.write(enhanced)
-            monitor.mark("playback")
+    else:
+        raise ValueError(f"Unknown demonstration mode: {mode}")
 
-            snapshot = monitor.end()
-            frame_count += 1
+    # Build streaming pipeline
+    pipeline = StreamingPipeline(
+        input_source=audio_in,
+        output_sink=audio_out,
+        engine=engine,
+        telemetry=telemetry,
+        buffer_size=16,
+    )
 
-            if frame_count % 10 == 0:
-                elapsed = time.time() - start_time
-                avg = monitor.average_ms
-                sys.stdout.write(
-                    f"\r  Frames: {frame_count:3d} | "
-                    f"Elapsed: {elapsed:4.1f}s | "
-                    f"Latency: {snapshot.total_ms:5.1f}ms "
-                    f"(recv={avg.get('receive', 0):.1f}ms, enh={avg.get('enhance', 0):.1f}ms, play={avg.get('playback', 0):.1f}ms) | "
-                    f"RT ratio: {timing.realtime_ratio:.2f}x"
-                )
-                sys.stdout.flush()
+    # Signal handling for clean Ctrl+C shutdown
+    running = True
 
-                _write_status(status_file, {
-                    "mode": "simulated",
-                    "model": model.name,
-                    "frame_count": frame_count,
-                    "elapsed_seconds": elapsed,
-                    "total_latency_ms": snapshot.total_ms,
-                    "stage_latencies_ms": avg,
-                    "realtime_ratio": timing.realtime_ratio,
-                    "input_rms": float(np.sqrt(np.mean(meas**2))),
-                    "output_rms": float(np.sqrt(np.mean(enhanced**2))),
-                    "sample_rate": sample_rate,
-                    "status": "running",
-                    "timestamp": time.time(),
-                })
-    finally:
-        sender_running = False
-        sender_thread.join(timeout=1.0)
-        receiver.stop()
-        playback.stop()
+    def _sig_handler(sig, frame):
+        nonlocal running
+        running = False
+        print("\n[Demo] Interrupt received, terminating streaming pipeline...")
+        pipeline.stop()
 
-        _write_status(status_file, {
-            "mode": "simulated",
-            "model": model.name,
-            "frame_count": frame_count,
-            "elapsed_seconds": time.time() - start_time,
-            "realtime_ratio": timing.realtime_ratio,
-            "sample_rate": sample_rate,
-            "status": "completed",
-            "timestamp": time.time(),
-        })
+    signal.signal(signal.SIGINT, _sig_handler)
 
-        print(f"\n\nSimulation completed successfully: {frame_count} frames processed in {time.time()-start_time:.1f}s.")
-        print(monitor.summary())
+    print("\n[Pipeline] Streaming started. Press Ctrl+C to terminate.")
+
+    # Status printer callback
+    last_print = 0.0
+
+    def _on_frame_callback(count: int, snap: PipelineTelemetry) -> None:
+        nonlocal last_print
+        now = time.time()
+        if now - last_print >= 0.5:
+            last_print = now
+            sys.stdout.write(
+                f"\r  Frames: {snap.frames_processed:4d} | "
+                f"Uptime: {snap.elapsed_seconds:4.1f}s | "
+                f"Latency: {snap.total_latency_ms:4.1f}ms | "
+                f"RT Ratio: {snap.realtime_ratio:4.2f}x | "
+                f"Attenuation: -{abs(snap.estimated_attenuation_db):4.1f}dB"
+            )
+            sys.stdout.flush()
+
+    pipeline._on_frame = _on_frame_callback
+
+    # Run
+    t_start = time.time()
+    if duration > 0 and canon_mode != "offline":
+        pipeline.start()
+        while running and (time.time() - t_start < duration):
+            time.sleep(0.05)
+        pipeline.stop()
+    else:
+        pipeline.run_blocking()
+
+    elapsed = time.time() - t_start
+    final_snap = pipeline.get_telemetry()
+
+    print(f"\n\n{'='*75}")
+    print(f"DEMONSTRATION RUN SUMMARY")
+    print(f"{'='*75}")
+    print(f"  Frames Processed: {final_snap.frames_processed}")
+    print(f"  Elapsed Time:     {elapsed:.2f} s")
+    print(f"  Total Latency:    {final_snap.total_latency_ms:.2f} ms")
+    print(f"  Real-Time Ratio:  {final_snap.realtime_ratio:.2f}x (< 1.0x required)")
+    print(f"  Est. Attenuation: -{abs(final_snap.estimated_attenuation_db):.1f} dB")
+    if canon_mode == "offline" or isinstance(audio_out, WAVOutput):
+        print(f"  Enhanced Output:  {getattr(audio_out, '_path', 'N/A')}")
+    print(f"{'='*75}\n")
 
 
-def main():
+def main() -> None:
     parser = argparse.ArgumentParser(
-        description="PS26052 ANC -- Live Demo Orchestration",
+        description="PS26052 ANC Live Demonstration Orchestrator",
         formatter_class=argparse.RawDescriptionHelpFormatter,
     )
     parser.add_argument(
-        "--mode", choices=["live", "file", "loopback", "simulated"], default="simulated",
-        help="Demo mode (default: simulated)",
+        "--mode",
+        choices=["offline", "file", "laptop-live", "loopback", "pi-prototype", "live", "pi-edge", "simulated"],
+        default="offline",
+        help="Demo mode (default: offline)",
     )
+    parser.add_argument("--input", "-i", default=None, help="Input WAV file for offline mode")
+    parser.add_argument("--output", "-o", default=None, help="Output WAV file for enhanced audio")
+    parser.add_argument("--host", default="0.0.0.0", help="UDP bind address (default: 0.0.0.0)")
+    parser.add_argument("--port", type=int, default=5005, help="UDP port (default: 5005)")
     parser.add_argument(
         "--model", default="auto",
-        choices=["auto", "dtln", "rnnoise", "spectral_gate"],
-        help="Enhancement model (default: auto = best available)",
+        choices=["auto", "dtln", "dtln_quantized", "spectral_gate"],
+        help="AI enhancement model (default: auto)",
     )
-    parser.add_argument(
-        "--port", type=int, default=5005,
-        help="UDP port for live/simulated mode (default: 5005)",
-    )
-    parser.add_argument(
-        "--input", "-i", default=None,
-        help="Input .wav file for file mode",
-    )
-    parser.add_argument(
-        "--output", "-o", default=None,
-        help="Output .wav file for file mode (default: <input>_enhanced.wav)",
-    )
-    parser.add_argument(
-        "--no-anc", action="store_true",
-        help="Skip classical ANC stage (AI-only mode)",
-    )
-    parser.add_argument(
-        "--sample-rate", type=int, default=16000,
-        help="Sample rate (default: 16000)",
-    )
-    parser.add_argument(
-        "--duration", type=float, default=5.0,
-        help="Duration in seconds for simulated or loopback mode (default: 5.0)",
-    )
-    parser.add_argument(
-        "--status-file", type=str, default=None,
-        help="Path to write JSON status file for dashboard polling",
-    )
+    parser.add_argument("--no-anc", action="store_true", help="Disable classical ANC stage (AI-only)")
+    parser.add_argument("--sample-rate", type=int, default=16_000, help="Sample rate (default: 16000)")
+    parser.add_argument("--duration", type=float, default=0.0, help="Duration in seconds (0 = continuous / full file)")
+    parser.add_argument("--status-file", default="results/demo_status.json", help="Path to write JSON status file")
+    parser.add_argument("--ch0-is-reference", action="store_true", help="Set Channel 0 as Reference and Channel 1 as Error")
+    parser.add_argument("--calibrate", action="store_true", help="Run 2s channel gain calibration before streaming")
 
     args = parser.parse_args()
 
-    if args.mode == "file":
-        if not args.input:
-            parser.error("--input is required for file mode")
-        output = args.output or str(
-            Path(args.input).with_stem(Path(args.input).stem + "_enhanced")
-        )
-        _process_file(
-            args.input, output,
-            model_name=args.model,
-            no_anc=args.no_anc,
-            sample_rate=args.sample_rate,
-            status_file=args.status_file,
-        )
-    elif args.mode == "live":
-        _run_live(
-            port=args.port,
-            model_name=args.model,
-            no_anc=args.no_anc,
-            sample_rate=args.sample_rate,
-        )
-    elif args.mode == "loopback":
-        _run_loopback(
-            model_name=args.model,
-            sample_rate=args.sample_rate,
-            duration=args.duration,
-        )
-    elif args.mode == "simulated":
-        _run_simulated(
-            model_name=args.model,
-            sample_rate=args.sample_rate,
-            duration=args.duration if args.duration > 0 else 5.0,
-            port=args.port if args.port != 5005 else 15005,
-            no_anc=args.no_anc,
-            status_file=args.status_file,
-        )
+    run_demo(
+        mode=args.mode,
+        input_file=args.input,
+        output_file=args.output,
+        host=args.host,
+        port=args.port,
+        model_name=args.model,
+        no_anc=args.no_anc,
+        sample_rate=args.sample_rate,
+        duration=args.duration,
+        status_file=args.status_file,
+        ch0_is_reference=args.ch0_is_reference,
+        calibrate=args.calibrate,
+    )
 
 
 if __name__ == "__main__":

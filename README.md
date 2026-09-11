@@ -112,7 +112,27 @@ pip install -e ".[full,test]"
 
 ---
 
-## Running the Live Demonstration
+## Unified Command Center & Deliverable (All-in-One Interface)
+
+The project includes an all-in-one interactive web interface packing the complete noise cancellation pipeline into a single deliverable. It provides defence noise preset selection, custom WAV/MP3 upload, live in-browser microphone recording, dual time-frequency spectrogram visualization (input, enhanced, and attenuation heatmap), and an instant A/B audio player.
+
+### Quick Start (Single Command)
+
+```bash
+# Windows / Linux / macOS:
+python app.py
+```
+
+*Or on Windows, double-click* `start_app.bat`.
+
+- Automatically opens **`http://localhost:8080`** in your browser.
+- Select from 36 curated defence noise scenarios (Rotor, Engine, Impulsive, Wind, Alarm).
+- Or upload your own `.wav` file, or click **Start Recording** to test your live microphone.
+- View high-resolution spectrograms (0–8 kHz) and click **Instant A/B** to hear immediate noise suppression.
+
+---
+
+## Running the Live CLI Demonstrations
 
 The repository includes a self-contained live runner `run_live_demo.py` supporting three operating modes:
 

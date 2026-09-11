@@ -62,6 +62,8 @@ class OverlapAddProcessor:
         self._input_buffer = np.zeros(0, dtype=np.float64)
         self._output_buffer = np.zeros(0, dtype=np.float64)
         self._window_sum = np.zeros(0, dtype=np.float64)
+        self._write_pos = 0
+        self._read_pos = 0
 
     @property
     def frame_size(self) -> int:
@@ -142,11 +144,10 @@ class OverlapAddProcessor:
         return output[:original_length].copy()
 
     def process_chunk(self, chunk: np.ndarray) -> np.ndarray:
-        """Process a streaming audio chunk (stateful).
+        """Process a streaming audio chunk with proper overlap-add.
 
-        Call this repeatedly with consecutive chunks of audio. Returns
-        the enhanced audio for completed frames. There may be latency
-        equal to one frame.
+        Maintains internal state across calls for seamless reconstruction.
+        Call repeatedly with consecutive chunks of audio.
 
         Parameters
         ----------
@@ -156,58 +157,89 @@ class OverlapAddProcessor:
         Returns
         -------
         np.ndarray
-            Enhanced audio output (may be shorter or longer than input chunk).
+            Enhanced audio output (may differ in length from input due
+            to buffering; converges to same total length over time).
         """
         chunk = np.asarray(chunk, dtype=np.float64).ravel()
         self._input_buffer = np.concatenate([self._input_buffer, chunk])
 
         fs = self._frame_size
         hop = self._hop_size
-        output_chunks = []
+
+        # Process all complete frames in the input buffer
+        new_frames_output = np.zeros(0, dtype=np.float64)
 
         while len(self._input_buffer) >= fs:
             frame = self._input_buffer[:fs].copy()
 
-            # Analysis window
+            # Apply analysis window
             windowed = frame * self._window
 
-            # Enhance
+            # Run enhancement model
             enhanced = self._model.enhance(windowed)
             if len(enhanced) != fs:
-                enhanced = np.resize(enhanced, fs)
+                if len(enhanced) > fs:
+                    enhanced = enhanced[:fs]
+                else:
+                    enhanced = np.pad(enhanced, (0, fs - len(enhanced)))
 
-            # Synthesis window
+            # Apply synthesis window
             synthesized = enhanced * self._window
 
-            # Extend output buffer if needed
-            needed = len(self._output_buffer) + fs
-            if len(self._output_buffer) < needed:
-                extra = needed - len(self._output_buffer)
+            # Grow output accumulation buffer if needed
+            needed_len = len(self._output_buffer) + fs
+            if len(self._output_buffer) < needed_len:
                 self._output_buffer = np.pad(
-                    self._output_buffer, (0, extra)
+                    self._output_buffer,
+                    (0, needed_len - len(self._output_buffer)),
                 )
+                self._window_sum = np.pad(
+                    self._window_sum,
+                    (0, needed_len - len(self._window_sum)),
+                )
+
+            # Overlap-add: accumulate synthesis at current write position
+            # _write_pos tracks where the next frame starts in the output
+            if not hasattr(self, '_write_pos'):
+                self._write_pos = 0
+
+            end_pos = self._write_pos + fs
+            if end_pos > len(self._output_buffer):
+                extra = end_pos - len(self._output_buffer)
+                self._output_buffer = np.pad(self._output_buffer, (0, extra))
                 self._window_sum = np.pad(self._window_sum, (0, extra))
 
-            # Position in output buffer: always add at the current position
-            pos = len(self._output_buffer) - fs
-            # Actually, for streaming we need a different approach:
-            # Keep a write pointer
-            break  # Fall through to simple streaming below
+            self._output_buffer[self._write_pos:end_pos] += synthesized
+            self._window_sum[self._write_pos:end_pos] += self._window ** 2
 
-        # Simplified streaming: process complete frames, output hop-sized chunks
-        output_samples = []
-        while len(self._input_buffer) >= fs:
-            frame = self._input_buffer[:fs].copy()
-            enhanced = self._model.enhance(frame)
-            if len(enhanced) != fs:
-                enhanced = np.resize(enhanced, fs)
+            # Advance write position by hop
+            self._write_pos += hop
 
-            # For streaming, output the first hop_size samples of each frame
-            output_samples.append(enhanced[:hop])
+            # Advance input buffer by hop
             self._input_buffer = self._input_buffer[hop:]
 
-        if output_samples:
-            return np.concatenate(output_samples)
+        # Extract completed output samples (where window_sum is fully
+        # accumulated — i.e., everything before the current write position
+        # minus one frame of look-ahead)
+        if not hasattr(self, '_read_pos'):
+            self._read_pos = 0
+
+        # We can safely output up to (_write_pos - (fs - hop)) samples,
+        # which is where all overlapping frames have been accumulated.
+        safe_end = max(self._read_pos, self._write_pos - (fs - hop))
+
+        if safe_end > self._read_pos:
+            output_chunk = self._output_buffer[self._read_pos:safe_end].copy()
+            wsum_chunk = self._window_sum[self._read_pos:safe_end]
+
+            # Normalize by window overlap sum
+            floor = np.finfo(np.float64).eps
+            nonzero = wsum_chunk > floor
+            output_chunk[nonzero] /= wsum_chunk[nonzero]
+
+            self._read_pos = safe_end
+            return output_chunk
+
         return np.array([], dtype=np.float64)
 
     def reset(self) -> None:
@@ -215,3 +247,5 @@ class OverlapAddProcessor:
         self._input_buffer = np.zeros(0, dtype=np.float64)
         self._output_buffer = np.zeros(0, dtype=np.float64)
         self._window_sum = np.zeros(0, dtype=np.float64)
+        self._write_pos = 0
+        self._read_pos = 0

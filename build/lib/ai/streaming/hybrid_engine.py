@@ -175,6 +175,50 @@ class HybridEngine:
         return self._sample_rate
 
     @property
+    def convergence_indicator(self) -> float:
+        """Estimated filter convergence, 0.0 (diverged) to 1.0 (converged).
+
+        Uses the ratio of recent error energy reduction as a proxy for
+        convergence.  Returns 0.0 if ANC is not active.
+        """
+        if self._anc is None:
+            return 0.0
+        # Use filter coefficient norm relative to a moving average as
+        # a simple convergence heuristic: once the norm stabilises the
+        # filter has converged.
+        coeff_norm = float(np.linalg.norm(self._anc.coefficients))
+        if not hasattr(self, '_prev_coeff_norms'):
+            self._prev_coeff_norms: list[float] = []
+        self._prev_coeff_norms.append(coeff_norm)
+        if len(self._prev_coeff_norms) > 50:
+            self._prev_coeff_norms.pop(0)
+        if len(self._prev_coeff_norms) < 5:
+            return 0.0
+        recent = self._prev_coeff_norms[-10:]
+        if max(recent) < 1e-10:
+            return 0.0
+        variation = (max(recent) - min(recent)) / (max(recent) + 1e-10)
+        return float(np.clip(1.0 - variation, 0.0, 1.0))
+
+    @property
+    def estimated_attenuation_db(self) -> float:
+        """Estimated noise attenuation in dB from recent processing.
+
+        Compares input RMS to output RMS from the most recent frames.
+        Returns 0.0 if no data available.
+        """
+        if not self._timing_history:
+            return 0.0
+        if not hasattr(self, '_recent_input_rms'):
+            return 0.0
+        if not hasattr(self, '_recent_output_rms'):
+            return 0.0
+        if self._recent_input_rms < 1e-10:
+            return 0.0
+        ratio = self._recent_output_rms / (self._recent_input_rms + 1e-10)
+        return float(-20.0 * np.log10(max(ratio, 1e-10)))
+
+    @property
     def latest_timing(self) -> StageTimings | None:
         """Most recent processing timing, or None if no frames processed."""
         return self._timing_history[-1] if self._timing_history else None
@@ -213,6 +257,7 @@ class HybridEngine:
             Enhanced audio frame and per-stage timing.
         """
         measured = np.asarray(measured, dtype=np.float64).ravel()
+        self._recent_input_rms = float(np.sqrt(np.mean(measured ** 2)))
         t_total_start = time.perf_counter()
 
         # Stage 1: Classical ANC (if active)
@@ -248,6 +293,7 @@ class HybridEngine:
         if len(self._timing_history) > self._max_history:
             self._timing_history.pop(0)
 
+        self._recent_output_rms = float(np.sqrt(np.mean(enhanced ** 2)))
         return enhanced, timing
 
     def process_batch(
