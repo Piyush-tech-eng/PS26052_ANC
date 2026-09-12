@@ -72,21 +72,21 @@ class CalibrationResult:
             f"  Cross-correlation delay: {self.delay_samples} samples ({self.delay_ms:.2f} ms)",
             f"  Correlation peak:        {self.correlation_peak:.4f}",
             "",
-            f"  Synchronized:   {'✓' if self.channels_synchronized else '✗'}",
-            f"  Correlated:     {'✓' if self.channels_correlated else '✗'}",
-            f"  Correctly ordered: {'✓' if self.channels_ordered_correctly else '✗'}",
+            f"  Synchronized:   {'[OK]' if self.channels_synchronized else '[X]'}",
+            f"  Correlated:     {'[OK]' if self.channels_correlated else '[X]'}",
+            f"  Correctly ordered: {'[OK]' if self.channels_ordered_correctly else '[X]'}",
             "",
         ]
         if self.valid:
-            lines.append("  ✓ CALIBRATION PASSED")
+            lines.append("  [OK] CALIBRATION PASSED")
         else:
-            lines.append("  ✗ CALIBRATION ISSUES DETECTED")
+            lines.append("  [X] CALIBRATION ISSUES DETECTED")
             if not self.channels_correlated:
-                lines.append("    → Channels show low correlation — mics may not be capturing the same environment")
+                lines.append("    -> Channels show low correlation — mics may not be capturing the same environment")
             if not self.channels_synchronized:
-                lines.append(f"    → Channel delay of {self.delay_ms:.1f} ms exceeds synchronization threshold")
+                lines.append(f"    -> Channel delay of {self.delay_ms:.1f} ms exceeds synchronization threshold")
             if not self.channels_ordered_correctly:
-                lines.append("    → Reference mic has lower RMS than error mic — channels may be swapped")
+                lines.append("    -> Reference mic has lower RMS than error mic — channels may be swapped")
         return "\n".join(lines)
 
 
@@ -240,10 +240,9 @@ class ChannelCalibrator:
         channels_synchronized = abs(delay_ms) <= self._max_delay_ms
         channels_correlated = correlation_peak >= self._corr_threshold
         # In a feedforward setup, the reference mic (noise-facing) should
-        # generally have stronger noise signal → higher or similar RMS
+        # generally have stronger noise signal -> higher or similar RMS
         channels_ordered_correctly = ref_rms >= err_rms * 0.5  # Allow 6dB tolerance
-
-        valid = channels_synchronized and channels_correlated
+        valid = channels_synchronized and channels_correlated and channels_ordered_correctly
 
         return CalibrationResult(
             reference_rms=ref_rms,

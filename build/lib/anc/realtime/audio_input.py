@@ -396,6 +396,8 @@ class RaspberryPiInput(AudioInput):
             port=self._port,
             sample_rate=self._sr,
             jitter_buffer_depth=self._jitter_depth,
+            reference_channel=self._ref_ch,
+            error_channel=self._err_ch,
         )
         self._receiver.start()
         self._seq = 0
@@ -404,25 +406,15 @@ class RaspberryPiInput(AudioInput):
         if self._receiver is None:
             return None
 
-        raw = self._receiver.get_frame()
-        if raw is None:
+        stereo = self._receiver.get_stereo_frame()
+        if stereo is None:
             return None
 
-        audio = raw["audio"]  # shape [samples, channels]
-
-        if audio.ndim == 2 and audio.shape[1] >= 2:
-            ref = audio[:, self._ref_ch].astype(np.float64)
-            err = audio[:, self._err_ch].astype(np.float64)
-        else:
-            # Mono fallback
-            err = audio.ravel().astype(np.float64)
-            ref = None
-
         frame = AudioFrame(
-            reference=ref,
-            error=err,
+            reference=stereo["reference"],
+            error=stereo["error"],
             timestamp=time.time(),
-            sequence=raw.get("seq", self._seq),
+            sequence=stereo.get("seq", self._seq),
         )
         self._seq += 1
         return frame

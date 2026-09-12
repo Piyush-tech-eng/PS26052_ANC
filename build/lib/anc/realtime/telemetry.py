@@ -12,6 +12,7 @@ The telemetry is consumed by:
 
 from __future__ import annotations
 
+import collections
 import json
 import os
 import time
@@ -171,7 +172,13 @@ class TelemetryCollector:
 
         self._state = "STOPPED"
 
-        # Waveform buffers (latest frame, decimated for dashboard)
+        # Rolling audio sample buffers (~2048 samples per channel)
+        self._buffer_maxlen = 2048
+        self._ref_sample_buf: collections.deque[float] = collections.deque(maxlen=self._buffer_maxlen)
+        self._err_sample_buf: collections.deque[float] = collections.deque(maxlen=self._buffer_maxlen)
+        self._out_sample_buf: collections.deque[float] = collections.deque(maxlen=self._buffer_maxlen)
+
+        # Decimated waveforms for dashboard
         self._ref_waveform: list[float] = []
         self._err_waveform: list[float] = []
         self._out_waveform: list[float] = []
@@ -224,6 +231,10 @@ class TelemetryCollector:
         self._inference_ms = inference_ms
         self._rt_ratio = realtime_ratio
 
+    def set_model_precision(self, precision: str) -> None:
+        """Set the active AI model precision tier."""
+        self._model_precision = precision
+
     def update_latency(
         self,
         *,
@@ -259,32 +270,35 @@ class TelemetryCollector:
 
     def update_waveforms(
         self,
-        reference: np.ndarray | None = None,
-        error: np.ndarray | None = None,
-        output: np.ndarray | None = None,
-        max_points: int = 200,
+        reference: Any | None = None,
+        error: Any | None = None,
+        output: Any | None = None,
+        max_points: int = 256,
     ) -> None:
-        """Store decimated waveform data for dashboard visualization."""
+        """Store real audio samples into rolling buffers and decimate for dashboard."""
         import numpy as np
 
-        def _decimate(arr: np.ndarray, n: int) -> list[float]:
+        def _decimate_buf(buf: collections.deque[float], n: int) -> list[float]:
+            if not buf:
+                return []
+            arr = list(buf)
             if len(arr) <= n:
-                return arr.tolist()
+                return [round(float(v), 4) for v in arr]
             indices = np.linspace(0, len(arr) - 1, n, dtype=int)
-            return arr[indices].tolist()
+            return [round(float(arr[i]), 4) for i in indices]
 
         if reference is not None:
-            self._ref_waveform = _decimate(
-                np.asarray(reference, dtype=np.float64).ravel(), max_points
-            )
+            ref_flat = np.asarray(reference, dtype=np.float32).ravel()
+            self._ref_sample_buf.extend(ref_flat.tolist())
+            self._ref_waveform = _decimate_buf(self._ref_sample_buf, max_points)
         if error is not None:
-            self._err_waveform = _decimate(
-                np.asarray(error, dtype=np.float64).ravel(), max_points
-            )
+            err_flat = np.asarray(error, dtype=np.float32).ravel()
+            self._err_sample_buf.extend(err_flat.tolist())
+            self._err_waveform = _decimate_buf(self._err_sample_buf, max_points)
         if output is not None:
-            self._out_waveform = _decimate(
-                np.asarray(output, dtype=np.float64).ravel(), max_points
-            )
+            out_flat = np.asarray(output, dtype=np.float32).ravel()
+            self._out_sample_buf.extend(out_flat.tolist())
+            self._out_waveform = _decimate_buf(self._out_sample_buf, max_points)
 
     def snapshot(self) -> PipelineTelemetry:
         """Build and return a complete telemetry snapshot."""
@@ -356,7 +370,7 @@ class TelemetryCollector:
             snap = self.snapshot()
             self._status_file.parent.mkdir(parents=True, exist_ok=True)
             tmp = self._status_file.with_suffix(".tmp")
-            tmp.write_text(snap.to_json() + "\n", encoding="utf-8")
+            tmp.write_text(snap.to_json(include_waveforms=True) + "\n", encoding="utf-8")
             tmp.replace(self._status_file)
         except Exception:
             pass

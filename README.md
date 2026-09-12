@@ -24,6 +24,12 @@ An end-to-end, real-time hybrid noise cancellation platform combining classical 
 └──────────────────────────────────────┘          └────────────────────────────────────────────────────────┘
 ```
 
+### Architecture Note: Computational Noise Suppression vs. Physical Acoustic ANC
+> **Scope & Engineering Clarification**:
+> - **Operational Goal**: This system provides **computational noise suppression for a tactical voice communications link**, rather than closed-loop physical active noise cancellation (acoustic wave interference in open air).
+> - **Input Channels**: "Reference mic" and "error mic" denote two synchronous input channels consumed by an adaptive FxNLMS algorithm, rather than an analog loudspeaker feedback loop emitting anti-noise into an acoustic space.
+> - **Acoustic Latency Realities**: Physical acoustic cancellation demands sub-millisecond phase alignment ($< 0.5\text{ ms}$). Neural speech enhancement networks (DTLN/Conv-TasNet), STFT analysis windows, and jitter buffers naturally operate at $20\text{–}40\text{ ms}$ latency—completely incompatible with open-air destructive interference, but optimal for high-intelligibility voice reception across a communication link.
+
 ### Key Technical Differentiators
 1. **True Hybrid Cascade**: Classical FxNLMS handles correlated, stationary noise and secondary path acoustics with sub-millisecond algorithmic delay; the deep speech enhancement model removes nonstationary, impulsive, and diffuse defence noise (artillery, rotor, engine, sirens).
 2. **Proven Generalization**: Rigid speaker-isolated splits and held-out noise-family reservation guarantee models generalize to unseen speakers and acoustic environments without memorization.

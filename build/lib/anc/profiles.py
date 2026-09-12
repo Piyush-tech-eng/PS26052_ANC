@@ -24,11 +24,26 @@ Usage::
 from __future__ import annotations
 
 import importlib
+import os
 import warnings
 from dataclasses import dataclass, field
 from typing import Any
 
 from anc.config import ExecutionProfile
+
+
+def get_active_profile() -> ExecutionProfile:
+    """Return the active execution profile.
+
+    Reads from the ``ANC_PROFILE`` environment variable if set
+    (``development``, ``prototype``, or ``edge``). Defaults to
+    ``ExecutionProfile.PROTOTYPE``.
+    """
+    env_val = os.environ.get("ANC_PROFILE", "").lower().strip()
+    for prof in ExecutionProfile:
+        if prof.value == env_val:
+            return prof
+    return ExecutionProfile.PROTOTYPE
 
 
 @dataclass
@@ -113,9 +128,9 @@ class ValidationResult:
     def summary(self) -> str:
         lines = [f"Profile: {self.profile.value}"]
         if self.valid:
-            lines.append("  Status: ✓ All required dependencies satisfied")
+            lines.append("  Status: [OK] All required dependencies satisfied")
         else:
-            lines.append("  Status: ✗ Missing required dependencies")
+            lines.append("  Status: [X] Missing required dependencies")
             for pkg in self.missing_required:
                 lines.append(f"    - {pkg}")
         if self.missing_optional:
@@ -124,7 +139,7 @@ class ValidationResult:
                 lines.append(f"    - {pkg}")
         lines.append("  Features:")
         for feat, available in self.available_features.items():
-            mark = "✓" if available else "✗"
+            mark = "[OK]" if available else "[X]"
             lines.append(f"    {mark} {feat}")
         return "\n".join(lines)
 
@@ -134,7 +149,7 @@ def _check_package(name: str) -> bool:
     try:
         importlib.import_module(name)
         return True
-    except ImportError:
+    except (ImportError, OSError):
         return False
 
 

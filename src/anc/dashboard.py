@@ -360,14 +360,14 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         </div>
         <div class="metric-row">
           <span class="metric-label">Host CPU Load</span>
-          <span class="metric-value" id="cpuLoad">0.0%</span>
+          <span class="metric-value" id="cpuLoad">—</span>
         </div>
         <div class="progress-bar-bg">
           <div class="progress-bar-fill" id="cpuBar" style="width: 0%;"></div>
         </div>
         <div class="metric-row" style="margin-top: 8px;">
           <span class="metric-label">Host RAM Usage</span>
-          <span class="metric-value" id="ramUsage">0.0 MB</span>
+          <span class="metric-value" id="ramUsage">—</span>
         </div>
       </div>
 
@@ -378,19 +378,19 @@ DASHBOARD_HTML = """<!DOCTYPE html>
           <span id="ancActiveTag" style="color: var(--accent-green); font-size:11px;">ACTIVE</span>
         </div>
         <div class="primary-metric">
-          <span id="attenuationVal">0.0</span>
+          <span id="attenuationVal">—</span>
           <span class="primary-unit">dB Attenuation</span>
         </div>
         <div class="metric-row">
           <span class="metric-label">Filter Convergence</span>
-          <span class="metric-value" id="convergenceVal">0.0%</span>
+          <span class="metric-value" id="convergenceVal">—</span>
         </div>
         <div class="progress-bar-bg">
           <div class="progress-bar-fill" id="convergenceBar" style="width: 0%;"></div>
         </div>
         <div class="metric-row" style="margin-top: 8px;">
           <span class="metric-label">Filter Configuration</span>
-          <span class="metric-value" id="filterTaps">64 taps (μ = 0.01)</span>
+          <span class="metric-value" id="filterTaps">— (NO DATA)</span>
         </div>
         <div class="metric-row">
           <span class="metric-label">Secondary-Path State</span>
@@ -405,23 +405,23 @@ DASHBOARD_HTML = """<!DOCTYPE html>
           <span id="aiPrecisionTag" class="badge-profile" style="font-size:10px; padding:2px 6px;">INT8 QUANT</span>
         </div>
         <div class="primary-metric">
-          <span id="aiLatencyVal">0.0</span>
+          <span id="aiLatencyVal">—</span>
           <span class="primary-unit">ms / frame</span>
         </div>
         <div class="metric-row">
           <span class="metric-label">Active Neural Architecture</span>
-          <span class="metric-value" id="aiModelName">DTLN (Two-Stage ONNX)</span>
+          <span class="metric-value" id="aiModelName">—</span>
         </div>
         <div class="metric-row">
           <span class="metric-label">Real-Time Processing Ratio</span>
-          <span class="metric-value" id="rtRatioVal">0.00x</span>
+          <span class="metric-value" id="rtRatioVal">—</span>
         </div>
         <div class="progress-bar-bg">
           <div class="progress-bar-fill" id="rtRatioBar" style="width: 0%;"></div>
         </div>
         <div class="metric-row" style="margin-top: 8px;">
           <span class="metric-label">Real-Time Margin</span>
-          <span class="metric-value" id="rtMarginVal" style="color: var(--accent-green);">--</span>
+          <span class="metric-value" id="rtMarginVal" style="color: var(--accent-green);">—</span>
         </div>
       </div>
     </div>
@@ -440,9 +440,9 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         </div>
         <canvas id="waveformCanvas" width="600" height="150"></canvas>
         <div class="metric-row" style="margin-top: 8px;">
-          <span class="metric-label">Ref RMS: <strong id="refRms" style="color:#38bdf8;">0.000</strong></span>
-          <span class="metric-label">Err RMS: <strong id="errRms" style="color:#fbbf24;">0.000</strong></span>
-          <span class="metric-label">Out RMS: <strong id="outRms" style="color:#34d399;">0.000</strong></span>
+          <span class="metric-label">Ref RMS: <strong id="refRms" style="color:#38bdf8;">—</strong></span>
+          <span class="metric-label">Err RMS: <strong id="errRms" style="color:#fbbf24;">—</strong></span>
+          <span class="metric-label">Out RMS: <strong id="outRms" style="color:#34d399;">—</strong></span>
         </div>
       </div>
 
@@ -486,11 +486,11 @@ DASHBOARD_HTML = """<!DOCTYPE html>
           </div>
         </div>
         <div class="metric-row" style="margin-top: 14px;">
-          <span class="metric-label">Capture: <strong id="capMs">0.0</strong> ms</span>
-          <span class="metric-label">Transport: <strong id="transMs">0.0</strong> ms</span>
-          <span class="metric-label">ANC: <strong id="ancMs">0.0</strong> ms</span>
-          <span class="metric-label">AI: <strong id="aiMs">0.0</strong> ms</span>
-          <span class="metric-label">Output: <strong id="playMs">0.0</strong> ms</span>
+          <span class="metric-label">Capture: <strong id="capMs">—</strong> ms</span>
+          <span class="metric-label">Transport: <strong id="transMs">—</strong> ms</span>
+          <span class="metric-label">ANC: <strong id="ancMs">—</strong> ms</span>
+          <span class="metric-label">AI: <strong id="aiMs">—</strong> ms</span>
+          <span class="metric-label">Output: <strong id="playMs">—</strong> ms</span>
         </div>
       </div>
 
@@ -523,6 +523,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     const specCtx = specCanvas.getContext('2d');
 
     function formatTime(seconds) {
+      if (seconds == null || isNaN(seconds) || seconds <= 0) return "00:00:00";
       const s = Math.floor(seconds);
       const hrs = String(Math.floor(s / 3600)).padStart(2, '0');
       const mins = String(Math.floor((s % 3600) / 60)).padStart(2, '0');
@@ -533,10 +534,10 @@ DASHBOARD_HTML = """<!DOCTYPE html>
     function drawWaveforms(ref, err, out) {
       const w = waveCanvas.width;
       const h = waveCanvas.height;
-      waveCtx.fillStyle = 'rgba(8, 12, 22, 0.95)';
+      waveCtx.fillStyle = '#0a0e14';
       waveCtx.fillRect(0, 0, w, h);
 
-      // Center baseline
+      // Baseline center grid line
       waveCtx.strokeStyle = 'rgba(255, 255, 255, 0.08)';
       waveCtx.lineWidth = 1;
       waveCtx.beginPath();
@@ -544,47 +545,84 @@ DASHBOARD_HTML = """<!DOCTYPE html>
       waveCtx.lineTo(w, h / 2);
       waveCtx.stroke();
 
+      const hasData = (ref && ref.length > 0) || (err && err.length > 0) || (out && out.length > 0);
+      if (!hasData) {
+        waveCtx.fillStyle = '#64748b';
+        waveCtx.font = '11px "JetBrains Mono", monospace';
+        waveCtx.textAlign = 'center';
+        waveCtx.fillText('[ AWAITING LIVE AUDIO STREAM — NO BUFFER DATA ]', w / 2, h / 2 + 4);
+        return;
+      }
+
       function plotLine(arr, color) {
         if (!arr || arr.length === 0) return;
         waveCtx.strokeStyle = color;
-        waveCtx.lineWidth = 1.5;
+        waveCtx.lineWidth = 1.4;
         waveCtx.beginPath();
         const step = w / arr.length;
         for (let i = 0; i < arr.length; i++) {
-          const y = (h / 2) - (arr[i] * (h / 2) * 0.9);
+          const y = (h / 2) - (arr[i] * (h / 2) * 0.95);
           if (i === 0) waveCtx.moveTo(0, y);
           else waveCtx.lineTo(i * step, y);
         }
         waveCtx.stroke();
       }
 
-      plotLine(ref, '#38bdf8');
-      plotLine(err, '#fbbf24');
-      plotLine(out, '#34d399');
+      plotLine(ref, '#38bdf8'); // Reference (Ch1)
+      plotLine(err, '#f59e0b'); // Error/Noisy (Ch0)
+      plotLine(out, '#10b981'); // Cleaned Output
     }
 
-    function drawSpectrum(inRms, outRms) {
+    function computeSpectrumBins(samples, numBins) {
+      if (!samples || samples.length === 0) return new Float32Array(numBins);
+      const N = samples.length;
+      const bins = new Float32Array(numBins);
+      const maxK = Math.floor(N / 2);
+      for (let b = 0; b < numBins; b++) {
+        const k = Math.max(1, Math.min(maxK, Math.round(1 + (maxK - 1) * Math.pow(b / (numBins - 1), 1.4))));
+        let real = 0, imag = 0;
+        for (let n = 0; n < N; n++) {
+          const angle = (2 * Math.PI * k * n) / N;
+          real += samples[n] * Math.cos(angle);
+          imag -= samples[n] * Math.sin(angle);
+        }
+        bins[b] = Math.sqrt(real * real + imag * imag) / N;
+      }
+      return bins;
+    }
+
+    function drawSpectrum(errSamples, outSamples) {
       const w = specCanvas.width;
       const h = specCanvas.height;
-      specCtx.fillStyle = 'rgba(8, 12, 22, 0.95)';
+      specCtx.fillStyle = '#0a0e14';
       specCtx.fillRect(0, 0, w, h);
 
-      // Synthetic 32-bin frequency response based on current RMS
+      const hasData = (errSamples && errSamples.length > 0) || (outSamples && outSamples.length > 0);
+      if (!hasData) {
+        specCtx.fillStyle = '#64748b';
+        specCtx.font = '11px "JetBrains Mono", monospace';
+        specCtx.textAlign = 'center';
+        specCtx.fillText('[ SPECTRUM IDLE — NO SIGNAL DETECTED ]', w / 2, h / 2 + 4);
+        return;
+      }
+
       const bins = 32;
       const binW = (w / bins) - 2;
+      const inMag = computeSpectrumBins(errSamples, bins);
+      const outMag = computeSpectrumBins(outSamples, bins);
 
       for (let i = 0; i < bins; i++) {
         const x = i * (binW + 2);
-        // Frequency decay curve
-        const freqWeight = Math.exp(-i / 12);
-        const inH = Math.min(h * 0.85, (inRms * 800 * freqWeight) + (Math.sin(i * 0.8 + Date.now() * 0.005) * 6));
-        const outH = Math.min(inH * 0.4, (outRms * 800 * freqWeight) + (Math.cos(i * 0.8 + Date.now() * 0.005) * 3));
+        const inDb = 20 * Math.log10(Math.max(inMag[i], 1e-4));
+        const outDb = 20 * Math.log10(Math.max(outMag[i], 1e-4));
+        const inH = Math.min(h * 0.95, Math.max(2, ((inDb + 60) / 60) * h * 0.9));
+        const outH = Math.min(inH, Math.max(0, ((outDb + 60) / 60) * h * 0.9));
 
-        // Red input bar
-        specCtx.fillStyle = 'rgba(239, 68, 68, 0.4)';
+        // Input spectrum bar
+        specCtx.fillStyle = 'rgba(239, 68, 68, 0.45)';
         specCtx.fillRect(x, h - inH, binW, inH);
 
-        // Green output bar
+        // Enhanced spectrum bar
         specCtx.fillStyle = '#10b981';
         specCtx.fillRect(x, h - outH, binW, outH);
       }
@@ -597,7 +635,7 @@ DASHBOARD_HTML = """<!DOCTYPE html>
         const data = await res.json();
 
         // System State
-        const state = data.state || 'LIVE';
+        const state = data.state || 'OFFLINE';
         const badge = document.getElementById('systemStateBadge');
         const badgeText = document.getElementById('systemStateText');
         badgeText.textContent = state;
@@ -607,77 +645,117 @@ DASHBOARD_HTML = """<!DOCTYPE html>
           badge.className = 'status-badge stopped';
         }
 
-        document.getElementById('pipelineMode').textContent = (data.mode || 'offline').toUpperCase();
-        document.getElementById('uptimeVal').textContent = formatTime(data.elapsed_seconds || 0);
-        document.getElementById('framesProcessed').textContent = (data.frames_processed || 0).toLocaleString();
-        document.getElementById('sampleRateFrame').textContent = `${(data.sample_rate || 16000) / 1000} kHz / ${Math.round((data.frame_size || 320) / (data.sample_rate || 16000) * 1000)} ms`;
+        document.getElementById('pipelineMode').textContent = data.mode ? data.mode.toUpperCase() : '—';
+        document.getElementById('uptimeVal').textContent = data.elapsed_seconds != null ? formatTime(data.elapsed_seconds) : '—';
+        document.getElementById('framesProcessed').textContent = data.frames_processed != null ? data.frames_processed.toLocaleString() : '—';
         
-        const cpu = data.cpu_percent || 0;
-        document.getElementById('cpuLoad').textContent = `${cpu.toFixed(1)}%`;
-        document.getElementById('cpuBar').style.width = `${Math.min(cpu, 100)}%`;
-        document.getElementById('ramUsage').textContent = `${(data.ram_mb || 0).toFixed(1)} MB`;
-
-        // Classical ANC
-        const atten = Math.abs(data.estimated_attenuation_db || 0);
-        document.getElementById('attenuationVal').textContent = atten.toFixed(1);
-        const conv = Math.min(Math.max((data.convergence_indicator || 0) * 100, 0), 100);
-        document.getElementById('convergenceVal').textContent = `${conv.toFixed(1)}%`;
-        document.getElementById('convergenceBar').style.width = `${conv}%`;
-        document.getElementById('filterTaps').textContent = `${data.filter_length || 64} taps (μ = ${data.step_size || 0.01})`;
-
-        // AI Panel
-        document.getElementById('aiLatencyVal').textContent = (data.inference_time_ms || 0).toFixed(1);
-        document.getElementById('aiModelName').textContent = (data.model_name || 'DTLN').toUpperCase();
-        document.getElementById('aiPrecisionTag').textContent = (data.model_precision || 'int8').toUpperCase();
-
-        const rt = data.realtime_ratio || 0;
-        document.getElementById('rtRatioVal').textContent = `${rt.toFixed(2)}x`;
-        const rtPct = Math.min(rt * 100, 100);
-        const rtBar = document.getElementById('rtRatioBar');
-        rtBar.style.width = `${rtPct}%`;
-        rtBar.className = rt < 0.9 ? 'progress-bar-fill' : 'progress-bar-fill warning';
-        document.getElementById('rtMarginVal').textContent = rt > 0 ? `${(1.0 / rt).toFixed(1)}x faster than real-time` : '--';
-
-        // Waveforms
-        document.getElementById('refRms').textContent = (data.reference_rms || 0).toFixed(3);
-        document.getElementById('errRms').textContent = (data.input_rms || 0).toFixed(3);
-        document.getElementById('outRms').textContent = (data.output_rms || 0).toFixed(3);
-
-        if (data.reference_waveform && data.reference_waveform.length > 0) {
-          drawWaveforms(data.reference_waveform, data.error_waveform, data.output_waveform);
+        if (data.sample_rate != null && data.frame_size != null) {
+          document.getElementById('sampleRateFrame').textContent = `${data.sample_rate / 1000} kHz / ${Math.round(data.frame_size / data.sample_rate * 1000)} ms`;
         } else {
-          // Synthetic fallback when idle
-          const n = 100;
-          const t = Date.now() * 0.005;
-          const ref = Array.from({length: n}, (_, i) => Math.sin(i * 0.2 + t) * (data.reference_rms || 0.3));
-          const err = Array.from({length: n}, (_, i) => Math.sin(i * 0.2 + t + 0.5) * (data.input_rms || 0.25));
-          const out = Array.from({length: n}, (_, i) => Math.sin(i * 0.2 + t) * (data.output_rms || 0.08));
-          drawWaveforms(ref, err, out);
+          document.getElementById('sampleRateFrame').textContent = '—';
         }
 
-        drawSpectrum(data.input_rms || 0.05, data.output_rms || 0.01);
+        // CPU & RAM
+        if (data.cpu_percent != null && data.cpu_percent > 0) {
+          document.getElementById('cpuLoad').textContent = `${data.cpu_percent.toFixed(1)}%`;
+          document.getElementById('cpuBar').style.width = `${Math.min(data.cpu_percent, 100)}%`;
+        } else {
+          document.getElementById('cpuLoad').textContent = '—';
+          document.getElementById('cpuBar').style.width = '0%';
+        }
+        document.getElementById('ramUsage').textContent = (data.ram_mb != null && data.ram_mb > 0) ? `${data.ram_mb.toFixed(1)} MB` : '—';
 
-        // Latencies
-        const cap = data.capture_latency_ms || 0.5;
-        const trans = data.transport_latency_ms || 0.2;
-        const anc = data.anc_latency_ms || 1.2;
-        const ai = data.ai_latency_ms || 8.5;
-        const play = data.playback_latency_ms || 1.0;
-        const total = data.total_latency_ms || (cap + trans + anc + ai + play);
+        // Classical ANC
+        if (data.estimated_attenuation_db != null) {
+          document.getElementById('attenuationVal').textContent = Math.abs(data.estimated_attenuation_db).toFixed(1);
+        } else {
+          document.getElementById('attenuationVal').textContent = '—';
+        }
 
-        document.getElementById('capMs').textContent = cap.toFixed(1);
-        document.getElementById('transMs').textContent = trans.toFixed(1);
-        document.getElementById('ancMs').textContent = anc.toFixed(1);
-        document.getElementById('aiMs').textContent = ai.toFixed(1);
-        document.getElementById('playMs').textContent = play.toFixed(1);
-        document.getElementById('totalLatencyTag').textContent = `${total.toFixed(1)} ms`;
+        if (data.convergence_indicator != null) {
+          const conv = Math.min(Math.max(data.convergence_indicator * 100, 0), 100);
+          document.getElementById('convergenceVal').textContent = `${conv.toFixed(1)}%`;
+          document.getElementById('convergenceBar').style.width = `${conv}%`;
+        } else {
+          document.getElementById('convergenceVal').textContent = '—';
+          document.getElementById('convergenceBar').style.width = '0%';
+        }
 
-        const tot = Math.max(total, 0.1);
-        document.getElementById('barCap').style.width = `${(cap / tot) * 100}%`;
-        document.getElementById('barTrans').style.width = `${(trans / tot) * 100}%`;
-        document.getElementById('barAnc').style.width = `${(anc / tot) * 100}%`;
-        document.getElementById('barAi').style.width = `${(ai / tot) * 100}%`;
-        document.getElementById('barPlay').style.width = `${(play / tot) * 100}%`;
+        if (data.filter_length != null) {
+          const muStr = data.step_size != null ? `μ = ${data.step_size}` : 'μ = —';
+          document.getElementById('filterTaps').textContent = `${data.filter_length} taps (${muStr})`;
+        } else {
+          document.getElementById('filterTaps').textContent = '— (NO DATA)';
+        }
+
+        // AI Panel
+        document.getElementById('aiLatencyVal').textContent = data.inference_time_ms != null ? data.inference_time_ms.toFixed(1) : '—';
+        document.getElementById('aiModelName').textContent = data.model_name ? data.model_name.toUpperCase() : '—';
+        document.getElementById('aiPrecisionTag').textContent = data.model_precision ? data.model_precision.toUpperCase() : '—';
+
+        if (data.realtime_ratio != null && data.realtime_ratio > 0) {
+          const rt = data.realtime_ratio;
+          document.getElementById('rtRatioVal').textContent = `${rt.toFixed(2)}x`;
+          const rtPct = Math.min(rt * 100, 100);
+          const rtBar = document.getElementById('rtRatioBar');
+          rtBar.style.width = `${rtPct}%`;
+          rtBar.className = rt < 0.9 ? 'progress-bar-fill' : 'progress-bar-fill warning';
+          document.getElementById('rtMarginVal').textContent = `${(1.0 / rt).toFixed(1)}x faster than real-time`;
+        } else {
+          document.getElementById('rtRatioVal').textContent = '—';
+          document.getElementById('rtRatioBar').style.width = '0%';
+          document.getElementById('rtMarginVal').textContent = '—';
+        }
+
+        // Audio Waveforms (Genuine Buffer Plotting)
+        document.getElementById('refRms').textContent = data.reference_rms != null ? data.reference_rms.toFixed(3) : '—';
+        document.getElementById('errRms').textContent = data.input_rms != null ? data.input_rms.toFixed(3) : '—';
+        document.getElementById('outRms').textContent = data.output_rms != null ? data.output_rms.toFixed(3) : '—';
+
+        const hasWaveforms = data.reference_waveform && data.reference_waveform.length > 0;
+        if (hasWaveforms) {
+          drawWaveforms(data.reference_waveform, data.error_waveform, data.output_waveform);
+          drawSpectrum(data.error_waveform, data.output_waveform);
+        } else {
+          drawWaveforms(null, null, null);
+          drawSpectrum(null, null);
+        }
+
+        // Latency Breakdown
+        if (data.total_latency_ms != null) {
+          const cap = data.capture_latency_ms != null ? data.capture_latency_ms : 0;
+          const trans = data.transport_latency_ms != null ? data.transport_latency_ms : 0;
+          const anc = data.anc_latency_ms != null ? data.anc_latency_ms : 0;
+          const ai = data.ai_latency_ms != null ? data.ai_latency_ms : 0;
+          const play = data.playback_latency_ms != null ? data.playback_latency_ms : 0;
+          const total = data.total_latency_ms;
+
+          document.getElementById('capMs').textContent = data.capture_latency_ms != null ? cap.toFixed(1) : '—';
+          document.getElementById('transMs').textContent = data.transport_latency_ms != null ? trans.toFixed(1) : '—';
+          document.getElementById('ancMs').textContent = data.anc_latency_ms != null ? anc.toFixed(1) : '—';
+          document.getElementById('aiMs').textContent = data.ai_latency_ms != null ? ai.toFixed(1) : '—';
+          document.getElementById('playMs').textContent = data.playback_latency_ms != null ? play.toFixed(1) : '—';
+          document.getElementById('totalLatencyTag').textContent = `${total.toFixed(1)} ms`;
+
+          const tot = Math.max(total, 0.1);
+          document.getElementById('barCap').style.width = `${(cap / tot) * 100}%`;
+          document.getElementById('barTrans').style.width = `${(trans / tot) * 100}%`;
+          document.getElementById('barAnc').style.width = `${(anc / tot) * 100}%`;
+          document.getElementById('barAi').style.width = `${(ai / tot) * 100}%`;
+          document.getElementById('barPlay').style.width = `${(play / tot) * 100}%`;
+        } else {
+          document.getElementById('capMs').textContent = '—';
+          document.getElementById('transMs').textContent = '—';
+          document.getElementById('ancMs').textContent = '—';
+          document.getElementById('aiMs').textContent = '—';
+          document.getElementById('playMs').textContent = '—';
+          document.getElementById('totalLatencyTag').textContent = '—';
+          document.getElementById('barCap').style.width = '0%';
+          document.getElementById('barTrans').style.width = '0%';
+          document.getElementById('barAnc').style.width = '0%';
+          document.getElementById('barAi').style.width = '0%';
+          document.getElementById('barPlay').style.width = '0%';
+        }
 
       } catch (err) {
         // Continue polling

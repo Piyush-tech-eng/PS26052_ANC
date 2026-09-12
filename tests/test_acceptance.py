@@ -63,12 +63,12 @@ class TestLiveDashboardAcceptance:
         DashboardRequestHandler.status_file = status_file
         DashboardRequestHandler.repo_root = Path(".")
 
-        port = 18080
-        server = socketserver.TCPServer(("127.0.0.1", port), DashboardRequestHandler)
+        server = socketserver.TCPServer(("127.0.0.1", 0), DashboardRequestHandler)
+        actual_port = server.server_address[1]
         t = threading.Thread(target=server.serve_forever, daemon=True)
         t.start()
 
-        yield f"http://127.0.0.1:{port}"
+        yield f"http://127.0.0.1:{actual_port}"
 
         server.shutdown()
         server.server_close()

@@ -260,11 +260,9 @@ class HybridEngine:
         self._recent_input_rms = float(np.sqrt(np.mean(measured ** 2)))
         t_total_start = time.perf_counter()
 
-        # Stage 1: Classical ANC (if active)
+        # Stage 1: Classical ANC (if active and reference channel provided)
         t_anc_start = time.perf_counter()
-        if self._anc is not None:
-            if reference is None:
-                raise ValueError("reference is required when ANC is active.")
+        if self._anc is not None and reference is not None:
             reference = np.asarray(reference, dtype=np.float64).ravel()
             if len(reference) != len(measured):
                 raise ValueError("reference and measured must have equal lengths.")

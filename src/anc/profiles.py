@@ -149,7 +149,7 @@ def _check_package(name: str) -> bool:
     try:
         importlib.import_module(name)
         return True
-    except ImportError:
+    except (ImportError, OSError):
         return False
 
 

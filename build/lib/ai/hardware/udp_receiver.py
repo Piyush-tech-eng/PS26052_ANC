@@ -18,7 +18,9 @@ from __future__ import annotations
 import socket
 import struct
 import threading
+import time
 from collections import deque
+from typing import Any
 
 import numpy as np
 
@@ -36,6 +38,12 @@ class UDPReceiver:
         Maximum number of frames to buffer (default ``100``).
     sample_rate : int
         Expected sample rate (for metadata, default ``16000``).
+    jitter_buffer_depth : int
+        Number of frames to buffer for reordering (default ``1``).
+    reference_channel : int
+        Channel index for reference microphone (default ``1``).
+    error_channel : int
+        Channel index for error microphone (default ``0``).
     """
 
     def __init__(
@@ -45,11 +53,16 @@ class UDPReceiver:
         buffer_size: int = 100,
         sample_rate: int = 16_000,
         jitter_buffer_depth: int = 1,
+        reference_channel: int = 1,
+        error_channel: int = 0,
     ) -> None:
         self._host = host
         self._port = port
         self._sample_rate = sample_rate
         self._jitter_depth = max(1, jitter_buffer_depth)
+        self._reference_channel = reference_channel
+        self._error_channel = error_channel
+        self._channel_gains = np.ones(2, dtype=np.float64)
 
         # Thread-safe frame buffer
         self._buffer: deque[dict[str, np.ndarray | int]] = deque(
@@ -93,6 +106,26 @@ class UDPReceiver:
         return self._frames_interpolated
 
     @property
+    def reference_channel(self) -> int:
+        return self._reference_channel
+
+    @reference_channel.setter
+    def reference_channel(self, ch: int) -> None:
+        self._reference_channel = ch
+
+    @property
+    def error_channel(self) -> int:
+        return self._error_channel
+
+    @error_channel.setter
+    def error_channel(self, ch: int) -> None:
+        self._error_channel = ch
+
+    @property
+    def channel_gains(self) -> np.ndarray:
+        return self._channel_gains.copy()
+
+    @property
     def buffer_level(self) -> int:
         """Number of frames currently buffered."""
         with self._lock:
@@ -124,14 +157,14 @@ class UDPReceiver:
             self._socket.close()
             self._socket = None
 
-    def get_frame(self) -> dict[str, np.ndarray | int] | None:
+    def get_frame(self) -> dict[str, Any] | None:
         """Pop the oldest frame from the buffer, or None if empty.
 
         Returns
         -------
         dict or None
             Keys: ``"audio"`` (np.ndarray, shape [samples, channels]),
-            ``"seq"`` (int), ``"channels"`` (int).
+            ``"seq"`` (int), ``"channels"`` (int), ``"flags"`` (int).
         """
         with self._lock:
             if self._buffer:
@@ -151,6 +184,102 @@ class UDPReceiver:
             return np.mean(audio, axis=1).astype(np.float64)
         return audio.astype(np.float64)
 
+    def get_stereo_frame(self) -> dict[str, Any] | None:
+        """Pop the oldest frame preserving both reference and error channels.
+
+        Returns
+        -------
+        dict or None
+            Keys:
+              ``"reference"``: np.ndarray (float64, 1D reference mic signal)
+              ``"error"``: np.ndarray (float64, 1D error/primary mic signal)
+              ``"seq"``: int
+              ``"raw_audio"``: np.ndarray (shape [samples, channels])
+              ``"flags"``: int
+        """
+        frame = self.get_frame()
+        if frame is None:
+            return None
+
+        audio = frame["audio"]
+        flags = frame.get("flags", 0)
+
+        # Apply channel gain normalization if 2-channel
+        if audio.ndim == 2 and audio.shape[1] >= 2:
+            if len(self._channel_gains) == audio.shape[1]:
+                audio = audio * self._channel_gains
+
+            # Check bit 0 of flags: if set, channel 0 is explicitly reference
+            if flags & 1:
+                ref_idx, err_idx = 0, 1
+            else:
+                ref_idx = min(self._reference_channel, audio.shape[1] - 1)
+                err_idx = min(self._error_channel, audio.shape[1] - 1)
+
+            ref = audio[:, ref_idx].copy()
+            err = audio[:, err_idx].copy()
+        elif audio.ndim == 2 and audio.shape[1] == 1:
+            err = audio[:, 0].copy()
+            ref = np.zeros_like(err)
+        else:
+            err = audio.copy()
+            ref = np.zeros_like(err)
+
+        return {
+            "reference": ref,
+            "error": err,
+            "seq": frame.get("seq", 0),
+            "raw_audio": audio,
+            "flags": flags,
+        }
+
+    def calibrate_channels(self, duration_s: float = 2.0) -> dict[str, float]:
+        """Calibrate channel gains based on ambient recording.
+
+        Parameters
+        ----------
+        duration_s : float
+            Duration in seconds to accumulate frames for calibration.
+
+        Returns
+        -------
+        dict
+            Calibration results including RMS values and gain adjustments.
+        """
+        frames: list[np.ndarray] = []
+        t0 = time.time()
+        while time.time() - t0 < duration_s:
+            f = self.get_frame()
+            if f is not None and f["audio"].ndim == 2 and f["audio"].shape[1] >= 2:
+                frames.append(f["audio"])
+            else:
+                time.sleep(0.01)
+
+        if not frames:
+            return {"status": "no_data", "gain_ratio": 1.0}
+
+        concatenated = np.vstack(frames)
+        rms_0 = float(np.sqrt(np.mean(concatenated[:, 0] ** 2)))
+        rms_1 = float(np.sqrt(np.mean(concatenated[:, 1] ** 2)))
+
+        if rms_0 > 1e-6 and rms_1 > 1e-6:
+            target_rms = (rms_0 + rms_1) / 2.0
+            g0 = target_rms / rms_0
+            g1 = target_rms / rms_1
+            self._channel_gains = np.array([g0, g1], dtype=np.float64)
+            gain_ratio = rms_1 / rms_0
+        else:
+            gain_ratio = 1.0
+
+        return {
+            "status": "calibrated",
+            "rms_ch0": rms_0,
+            "rms_ch1": rms_1,
+            "gain_ratio": gain_ratio,
+            "gain_ch0": float(self._channel_gains[0]),
+            "gain_ch1": float(self._channel_gains[1]),
+        }
+
     def _listen_loop(self) -> None:
         """Background thread: receive, parse, and jitter-buffer UDP packets."""
         while self._running:
@@ -166,8 +295,19 @@ class UDPReceiver:
             if len(data) < 12:
                 continue  # Malformed packet
 
-            # Parse header
-            seq, channels, samples_per_ch = struct.unpack(">III", data[:12])
+            # Support both 16-byte (extended with flags) and 12-byte (legacy) headers
+            flags = 0
+            if len(data) >= 16:
+                s_seq, s_ch, s_smp, s_flags = struct.unpack(">IIII", data[:16])
+                if s_ch > 0 and s_smp > 0 and len(data) == 16 + (s_ch * s_smp * 2):
+                    seq, channels, samples_per_ch, flags = s_seq, s_ch, s_smp, s_flags
+                    payload = data[16:]
+                else:
+                    seq, channels, samples_per_ch = struct.unpack(">III", data[:12])
+                    payload = data[12:]
+            else:
+                seq, channels, samples_per_ch = struct.unpack(">III", data[:12])
+                payload = data[12:]
 
             # Check for dropped/reordered packets
             if self._last_seq is not None:
@@ -178,8 +318,6 @@ class UDPReceiver:
                     self._packets_dropped += max(0, seq - expected)
             self._last_seq = seq
 
-            # Parse PCM payload
-            payload = data[12:]
             total_samples = channels * samples_per_ch
             expected_bytes = total_samples * 2  # int16
 
@@ -196,6 +334,7 @@ class UDPReceiver:
                 "audio": audio,
                 "seq": seq,
                 "channels": channels,
+                "flags": flags,
             }
 
             # Add to jitter buffer for reordering
@@ -271,6 +410,8 @@ def send_test_frame(
     samples: int = 320,
     channels: int = 2,
     sample_rate: int = 16_000,
+    flags: int = 0,
+    use_extended_header: bool = False,
 ) -> None:
     """Send a single test frame via UDP (for loopback testing).
 
@@ -288,6 +429,10 @@ def send_test_frame(
         Number of audio channels.
     sample_rate : int
         Sample rate (for generating test tone).
+    flags : int
+        Extended header flags (bit 0: ch0 is ref, bit 1: calibration).
+    use_extended_header : bool
+        If True or flags != 0, sends 16-byte header with flags.
     """
     t = np.arange(samples) / sample_rate
     audio = np.zeros((samples, channels), dtype=np.float64)
@@ -299,7 +444,10 @@ def send_test_frame(
     pcm = (audio * 32767).clip(-32768, 32767).astype(np.int16)
     interleaved = pcm.flatten().tobytes()
 
-    header = struct.pack(">III", seq, channels, samples)
+    if flags != 0 or use_extended_header:
+        header = struct.pack(">IIII", seq, channels, samples, flags)
+    else:
+        header = struct.pack(">III", seq, channels, samples)
     packet = header + interleaved
 
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)

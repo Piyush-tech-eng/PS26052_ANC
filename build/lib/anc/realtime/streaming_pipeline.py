@@ -77,24 +77,30 @@ class StreamingPipeline:
         mode: str = "offline",
         status_file: str | None = None,
         on_frame: Any = None,
+        telemetry: Any | None = None,
+        buffer_size: int = 16,
     ) -> None:
         self._input = input_source
         self._output = output_sink
         self._engine = engine
         self._mode = mode
         self._on_frame = on_frame
+        self._buffer_size = buffer_size
 
         self._running = False
         self._thread: threading.Thread | None = None
         self._error: Exception | None = None
 
         # Telemetry
-        self._telemetry = TelemetryCollector(
-            mode=mode,
-            sample_rate=input_source.sample_rate,
-            frame_size=input_source.frame_size,
-            status_file=status_file,
-        )
+        if telemetry is not None:
+            self._telemetry = telemetry
+        else:
+            self._telemetry = TelemetryCollector(
+                mode=mode,
+                sample_rate=input_source.sample_rate,
+                frame_size=input_source.frame_size,
+                status_file=status_file,
+            )
 
         # Stats
         self._frames_processed = 0
@@ -271,15 +277,16 @@ class StreamingPipeline:
                 )
                 self._telemetry.update_anc(
                     enabled=self._engine.has_anc,
+                    convergence=getattr(self._engine, "convergence_indicator", 0.0),
+                    attenuation_db=getattr(self._engine, "estimated_attenuation_db", 0.0),
                 )
 
-                # Waveform data for dashboard (every N frames to save bandwidth)
-                if self._frames_processed % 5 == 0:
-                    self._telemetry.update_waveforms(
-                        reference=reference,
-                        error=measured,
-                        output=enhanced,
-                    )
+                # Waveform data for dashboard (feed rolling sample buffer)
+                self._telemetry.update_waveforms(
+                    reference=reference,
+                    error=measured,
+                    output=enhanced,
+                )
 
                 # Write status file periodically
                 self._telemetry.write_status()

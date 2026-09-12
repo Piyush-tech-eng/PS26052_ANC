@@ -281,13 +281,12 @@ class StreamingPipeline:
                     attenuation_db=getattr(self._engine, "estimated_attenuation_db", 0.0),
                 )
 
-                # Waveform data for dashboard (every N frames to save bandwidth)
-                if self._frames_processed % 5 == 0:
-                    self._telemetry.update_waveforms(
-                        reference=reference,
-                        error=measured,
-                        output=enhanced,
-                    )
+                # Waveform data for dashboard (feed rolling sample buffer)
+                self._telemetry.update_waveforms(
+                    reference=reference,
+                    error=measured,
+                    output=enhanced,
+                )
 
                 # Write status file periodically
                 self._telemetry.write_status()
