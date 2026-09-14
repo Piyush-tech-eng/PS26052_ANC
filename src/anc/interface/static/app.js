@@ -1,10 +1,14 @@
 /**
  * PS26052 ANC Unified Interface Frontend Controller
- * Handles audio uploads, in-browser live microphone recording,
- * REST API communications, spectrogram rendering, and audio playback.
+ * Multi-page/multi-view architecture:
+ * - Studio (Audio upload/preset, cascade config, A/B audio listening station)
+ * - Spectral Lab (Time-frequency comparative spectrograms & attenuation heatmaps)
+ * - Pi 5 Edge Hub (Live edge hardware telemetry, gauges & connection management)
+ * - Benchmarks (Latency breakdown waterfall, scenario matrix, model precision tiers)
  */
 
 // Application State
+let currentView = 'studio'; // 'studio' | 'spectrograms' | 'edge' | 'benchmarks'
 let currentSourceType = 'preset'; // 'preset' | 'upload' | 'mic'
 let availablePresets = [];
 let uploadedAudioBase64 = null;
@@ -33,7 +37,87 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 async function initApp() {
+  initRouting();
   await Promise.all([loadHardwareStatus(), loadPresets()]);
+}
+
+/**
+ * Client-Side View Router & URL Hash Synchronization
+ */
+function initRouting() {
+  function getTargetViewFromUrl() {
+    const hash = window.location.hash.replace('#', '').toLowerCase();
+    const path = window.location.pathname.replace('/', '').toLowerCase();
+
+    const candidate = hash || path;
+    if (['studio', 'spectrograms', 'edge', 'benchmarks'].includes(candidate)) {
+      return candidate;
+    }
+    return 'studio';
+  }
+
+  // Handle initial page load
+  const initialView = getTargetViewFromUrl();
+  switchView(initialView, false);
+
+  // Listen for browser Back/Forward & hash changes
+  window.addEventListener('hashchange', () => {
+    const target = getTargetViewFromUrl();
+    switchView(target, false);
+  });
+
+  window.addEventListener('popstate', () => {
+    const target = getTargetViewFromUrl();
+    switchView(target, false);
+  });
+}
+
+/**
+ * Switch Active Application View
+ */
+function switchView(viewName, updateHash = true) {
+  if (!['studio', 'spectrograms', 'edge', 'benchmarks'].includes(viewName)) {
+    viewName = 'studio';
+  }
+  currentView = viewName;
+
+  // Update Navigation Link States
+  document.querySelectorAll('.nav-link').forEach(btn => {
+    if (btn.getAttribute('data-view') === viewName) {
+      btn.classList.add('active');
+    } else {
+      btn.classList.remove('active');
+    }
+  });
+
+  // Update View Panels
+  const viewIdMap = {
+    studio: 'viewStudio',
+    spectrograms: 'viewSpectrograms',
+    edge: 'viewEdge',
+    benchmarks: 'viewBenchmarks',
+  };
+
+  document.querySelectorAll('.view-panel').forEach(panel => {
+    panel.classList.remove('active');
+  });
+
+  const activePanel = document.getElementById(viewIdMap[viewName]);
+  if (activePanel) {
+    activePanel.classList.add('active');
+  }
+
+  // Update URL Hash if requested
+  if (updateHash && window.location.hash !== `#${viewName}`) {
+    window.location.hash = viewName;
+  }
+
+  // View-specific initialization
+  if (viewName === 'spectrograms' && lastProcessResult) {
+    renderSpectrograms(lastProcessResult);
+  } else if (viewName === 'edge') {
+    syncEdgeViewInputs();
+  }
 }
 
 /**
@@ -51,7 +135,7 @@ async function loadHardwareStatus() {
 
     if (data.recommended_model) {
       const modelSelect = document.getElementById('modelSelect');
-      if (modelSelect && data.models[data.recommended_model]) {
+      if (modelSelect && data.models && data.models[data.recommended_model]) {
         modelSelect.value = data.recommended_model;
       }
     }
@@ -92,13 +176,13 @@ async function loadPresets() {
 }
 
 /**
- * Switch Audio Input Source Tabs
+ * Switch Audio Input Source Tabs (Presets vs Upload vs Mic)
  */
 function switchSourceTab(type) {
   currentSourceType = type;
 
-  document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+  document.querySelectorAll('.source-tabs .tab-btn').forEach(btn => btn.classList.remove('active'));
+  document.querySelectorAll('#viewStudio .tab-content').forEach(c => c.classList.remove('active'));
 
   const badge = document.getElementById('selectedSourceBadge');
 
@@ -119,52 +203,59 @@ function switchSourceTab(type) {
     badge.className = 'badge badge-emerald';
     setupOscilloscopeIdle();
   }
+
+  // Update benchmark vs arbitrary mode badge
+  updateModeIndicator(type === 'preset');
 }
 
 /**
- * Preset selection change
+ * Preset Selected Handler
  */
 function onPresetSelected() {
   const select = document.getElementById('presetSelect');
-  const selectedId = select.value;
-  const preset = availablePresets.find(p => p.id === selectedId);
+  const details = document.getElementById('presetDetailsText');
+  const selected = availablePresets.find(p => p.id === select.value);
 
-  const infoText = document.getElementById('presetDetailsText');
-  if (preset && infoText) {
-    const refTag = preset.has_clean_reference ? 'Ground-Truth Clean Speech Reference available (SI-SNR & STOI will be evaluated).' : 'Mono Noisy Sample.';
-    infoText.textContent = `Acoustic Scenario: ${preset.category.toUpperCase()} noise at ${preset.snr}. ${refTag}`;
+  if (selected) {
+    details.textContent = `${selected.description || 'Defence scenario audio'} | Disturbance: ${selected.noise_type || 'Acoustic'} (${selected.snr_db !== undefined ? selected.snr_db + ' dB' : 'Low SNR'})`;
   }
+  updateModeIndicator(true);
 }
 
 /**
- * Drag & Drop / File Input Handler
+ * File Upload Handler (Drag & Drop or File Input)
  */
-function handleFileSelected(e) {
-  const file = e.target.files[0];
+function handleFileSelected(event) {
+  const file = event.target.files?.[0];
   if (!file) return;
 
   const reader = new FileReader();
-  reader.onload = (event) => {
-    uploadedAudioBase64 = event.target.result;
-    document.getElementById('loadedFileName').textContent = file.name;
-    document.getElementById('loadedFileSize').textContent = `${(file.size / 1024).toFixed(1)} KB`;
-    document.getElementById('fileLoadedBanner').style.display = 'flex';
+  reader.onload = (e) => {
+    uploadedAudioBase64 = e.target.result;
+    const banner = document.getElementById('fileLoadedBanner');
+    const nameEl = document.getElementById('loadedFileName');
+    const sizeEl = document.getElementById('loadedFileSize');
+
+    nameEl.textContent = file.name;
+    sizeEl.textContent = `${(file.size / 1024).toFixed(1)} KB`;
+    banner.style.display = 'flex';
+    updateModeIndicator(false);
   };
   reader.readAsDataURL(file);
 }
 
-// Drag & Drop Setup
+// Drag & Drop event bindings
 const dropzone = document.getElementById('fileDropzone');
 if (dropzone) {
-  ['dragenter', 'dragover'].forEach(eventName => {
-    dropzone.addEventListener(eventName, (e) => {
+  ['dragenter', 'dragover'].forEach(name => {
+    dropzone.addEventListener(name, (e) => {
       e.preventDefault();
-      dropzone.style.borderColor = '#38bdf8';
+      dropzone.style.borderColor = 'var(--accent-cyan)';
     }, false);
   });
 
-  ['dragleave', 'drop'].forEach(eventName => {
-    dropzone.addEventListener(eventName, (e) => {
+  ['dragleave', 'drop'].forEach(name => {
+    dropzone.addEventListener(name, (e) => {
       e.preventDefault();
       dropzone.style.borderColor = 'rgba(56, 189, 248, 0.3)';
     }, false);
@@ -172,60 +263,16 @@ if (dropzone) {
 
   dropzone.addEventListener('drop', (e) => {
     const dt = e.dataTransfer;
-    const file = dt.files[0];
-    if (file) {
-      const input = document.getElementById('audioFileInput');
-      input.files = dt.files;
-      handleFileSelected({ target: { files: [file] } });
+    const files = dt.files;
+    if (files.length) {
+      document.getElementById('audioFileInput').files = files;
+      handleFileSelected({ target: { files: files } });
     }
-  });
+  }, false);
 }
 
 /**
- * Mode Switching (Hybrid, AI-only, Classical-only)
- */
-function onModeChanged() {
-  const mode = document.getElementById('pipelineModeSelect').value;
-  const modelGroup = document.getElementById('modelSelectGroup');
-  const filterGroup = document.getElementById('filterTapsGroup');
-  const stepGroup = document.getElementById('stepSizeGroup');
-
-  if (mode === 'ai_only') {
-    modelGroup.style.display = 'flex';
-    filterGroup.style.display = 'none';
-    stepGroup.style.display = 'none';
-  } else if (mode === 'anc_only') {
-    modelGroup.style.display = 'none';
-    filterGroup.style.display = 'flex';
-    stepGroup.style.display = 'flex';
-  } else {
-    // Hybrid
-    modelGroup.style.display = 'flex';
-    filterGroup.style.display = 'flex';
-    stepGroup.style.display = 'flex';
-  }
-}
-
-/**
- * Microphone Oscilloscope Idle Display
- */
-function setupOscilloscopeIdle() {
-  const canvas = document.getElementById('micOscilloscopeCanvas');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#03060f';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  ctx.strokeStyle = '#1e293b';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(0, canvas.height / 2);
-  ctx.lineTo(canvas.width, canvas.height / 2);
-  ctx.stroke();
-}
-
-/**
- * Live Browser Microphone Recording
+ * Microphone Recording Controller
  */
 async function toggleMicRecording() {
   const btn = document.getElementById('micRecordBtn');
@@ -233,123 +280,122 @@ async function toggleMicRecording() {
   const timer = document.getElementById('recordTimer');
 
   if (!isRecording) {
-    // Start Recording
     try {
-      mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
+      mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { channelCount: 1, sampleRate: 16000 } });
+      audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+      audioInputNode = audioContext.createMediaStreamSource(mediaStream);
+      analyserNode = audioContext.createAnalyser();
+      analyserNode.fftSize = 512;
+
+      audioInputNode.connect(analyserNode);
+
+      // ScriptProcessorNode for raw PCM extraction
+      recorderNode = audioContext.createScriptProcessor(4096, 1, 1);
+      recordedBuffers = [];
+      recordedLength = 0;
+
+      recorderNode.onaudioprocess = (e) => {
+        if (!isRecording) return;
+        const channelData = e.inputBuffer.getChannelData(0);
+        recordedBuffers.push(new Float32Array(channelData));
+        recordedLength += channelData.length;
+      };
+
+      audioInputNode.connect(recorderNode);
+      recorderNode.connect(audioContext.destination);
+
+      isRecording = true;
+      recordStartTime = performance.now();
+      btnText.textContent = 'Stop Recording';
+      btn.style.background = 'rgba(239, 68, 68, 0.35)';
+
+      recordTimerInterval = setInterval(() => {
+        const elapsed = (performance.now() - recordStartTime) / 1000;
+        const mins = Math.floor(elapsed / 60).toString().padStart(2, '0');
+        const secs = (elapsed % 60).toFixed(1).padStart(4, '0');
+        timer.textContent = `${mins}:${secs}`;
+      }, 100);
+
+      drawOscilloscopeActive();
+
     } catch (err) {
-      alert(`Could not access microphone: ${err.message}. Please allow microphone permissions.`);
-      return;
+      alert(`Microphone access error: ${err.message}`);
+      console.error(err);
     }
-
-    audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-    audioInputNode = audioContext.createMediaStreamSource(mediaStream);
-    analyserNode = audioContext.createAnalyser();
-    analyserNode.fftSize = 512;
-
-    // Buffer collection node
-    const bufferSize = 4096;
-    recorderNode = audioContext.createScriptProcessor(bufferSize, 1, 1);
-    recordedBuffers = [];
-    recordedLength = 0;
-
-    recorderNode.onaudioprocess = (e) => {
-      if (!isRecording) return;
-      const inputBuffer = e.inputBuffer.getChannelData(0);
-      recordedBuffers.push(new Float32Array(inputBuffer));
-      recordedLength += inputBuffer.length;
-    };
-
-    audioInputNode.connect(analyserNode);
-    audioInputNode.connect(recorderNode);
-    recorderNode.connect(audioContext.destination);
-
-    isRecording = true;
-    recordStartTime = Date.now();
-    btn.classList.add('recording');
-    btnText.textContent = 'Stop & Process Audio';
-
-    // Start Timer
-    recordTimerInterval = setInterval(() => {
-      const elapsedMs = Date.now() - recordStartTime;
-      const secs = Math.floor(elapsedMs / 1000);
-      const dec = Math.floor((elapsedMs % 1000) / 100);
-      const mm = String(Math.floor(secs / 60)).padStart(2, '0');
-      const ss = String(secs % 60).padStart(2, '0');
-      timer.textContent = `${mm}:${ss}.${dec}`;
-    }, 100);
-
-    // Start Waveform Visualizer
-    drawOscilloscope();
-
   } else {
-    // Stop Recording
+    // Stop recording
     isRecording = false;
     clearInterval(recordTimerInterval);
-    cancelAnimationFrame(animFrameId);
+    btnText.textContent = 'Record Again';
+    btn.style.background = 'rgba(239, 68, 68, 0.15)';
 
-    btn.classList.remove('recording');
-    btnText.textContent = 'Start Recording';
+    if (mediaStream) mediaStream.getTracks().forEach(t => t.stop());
+    if (recorderNode) recorderNode.disconnect();
+    if (audioInputNode) audioInputNode.disconnect();
+    if (audioContext && audioContext.state !== 'closed') audioContext.close();
 
-    if (mediaStream) {
-      mediaStream.getTracks().forEach(t => t.stop());
-    }
-    if (audioContext && audioContext.state !== 'closed') {
-      audioContext.close();
-    }
-
-    // Merge Float32Array buffers and encode to standard 16-bit PCM WAV
+    // Flatten buffers
     const merged = new Float32Array(recordedLength);
     let offset = 0;
-    for (let i = 0; i < recordedBuffers.length; i++) {
-      merged.set(recordedBuffers[i], offset);
-      offset += recordedBuffers[i].length;
+    for (const b of recordedBuffers) {
+      merged.set(b, offset);
+      offset += b.length;
     }
 
     recordedAudioBase64 = encodeWAV(merged, 16000);
-    timer.textContent = 'Ready to Process';
-
-    // Automatically trigger processing pipeline
-    runProcessingPipeline();
+    updateModeIndicator(false);
+    setupOscilloscopeIdle();
   }
 }
 
 /**
- * Draw animated oscilloscope from live microphone
+ * Oscilloscope Canvas Renderers
  */
-function drawOscilloscope() {
-  if (!isRecording) return;
-  animFrameId = requestAnimationFrame(drawOscilloscope);
-
+function setupOscilloscopeIdle() {
   const canvas = document.getElementById('micOscilloscopeCanvas');
+  if (!canvas) return;
   const ctx = canvas.getContext('2d');
-  const bufferLength = analyserNode.frequencyBinCount;
-  const dataArray = new Uint8Array(bufferLength);
-  analyserNode.getByteTimeDomainData(dataArray);
+  ctx.fillStyle = '#050810';
+  ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-  ctx.fillStyle = '#03060f';
+  ctx.strokeStyle = 'rgba(56, 189, 248, 0.3)';
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.moveTo(0, canvas.height / 2);
+  ctx.lineTo(canvas.width, canvas.height / 2);
+  ctx.stroke();
+}
+
+function drawOscilloscopeActive() {
+  if (!isRecording) return;
+  const canvas = document.getElementById('micOscilloscopeCanvas');
+  if (!canvas) return;
+  const ctx = canvas.getContext('2d');
+  const buffer = new Uint8Array(analyserNode.frequencyBinCount);
+  analyserNode.getByteTimeDomainData(buffer);
+
+  ctx.fillStyle = '#050810';
   ctx.fillRect(0, 0, canvas.width, canvas.height);
 
   ctx.lineWidth = 2;
   ctx.strokeStyle = '#38bdf8';
   ctx.beginPath();
 
-  const sliceWidth = canvas.width * 1.0 / bufferLength;
+  const sliceWidth = canvas.width / buffer.length;
   let x = 0;
 
-  for (let i = 0; i < bufferLength; i++) {
-    const v = dataArray[i] / 128.0;
-    const y = v * (canvas.height / 2);
-
-    if (i === 0) {
-      ctx.moveTo(x, y);
-    } else {
-      ctx.lineTo(x, y);
-    }
+  for (let i = 0; i < buffer.length; i++) {
+    const v = buffer[i] / 128.0;
+    const y = (v * canvas.height) / 2;
+    if (i === 0) ctx.moveTo(x, y);
+    else ctx.lineTo(x, y);
     x += sliceWidth;
   }
 
   ctx.lineTo(canvas.width, canvas.height / 2);
   ctx.stroke();
+
+  animFrameId = requestAnimationFrame(drawOscilloscopeActive);
 }
 
 /**
@@ -365,11 +411,9 @@ function encodeWAV(samples, sampleRate) {
     }
   }
 
-  // RIFF identifier
   writeString(0, 'RIFF');
   view.setUint32(4, 36 + samples.length * 2, true);
   writeString(8, 'WAVE');
-  // fmt sub-chunk
   writeString(12, 'fmt ');
   view.setUint32(16, 16, true);
   view.setUint16(20, 1, true); // PCM
@@ -378,11 +422,9 @@ function encodeWAV(samples, sampleRate) {
   view.setUint32(28, sampleRate * 2, true);
   view.setUint16(32, 2, true);
   view.setUint16(34, 16, true);
-  // data sub-chunk
   writeString(36, 'data');
   view.setUint32(40, samples.length * 2, true);
 
-  // Write 16-bit PCM audio samples
   let offset = 44;
   for (let i = 0; i < samples.length; i++, offset += 2) {
     const s = Math.max(-1, Math.min(1, samples[i]));
@@ -398,6 +440,30 @@ function encodeWAV(samples, sampleRate) {
 }
 
 /**
+ * Mode Change Handler (Cascade selector: Hybrid vs AI-only vs Classical)
+ */
+function onModeChanged() {
+  const mode = document.getElementById('pipelineModeSelect').value;
+  const modelGroup = document.getElementById('modelSelectGroup');
+  const tapsGroup = document.getElementById('filterTapsGroup');
+  const stepGroup = document.getElementById('stepSizeGroup');
+
+  if (mode === 'hybrid') {
+    modelGroup.style.display = 'flex';
+    tapsGroup.style.display = 'flex';
+    stepGroup.style.display = 'flex';
+  } else if (mode === 'ai_only') {
+    modelGroup.style.display = 'flex';
+    tapsGroup.style.display = 'none';
+    stepGroup.style.display = 'none';
+  } else if (mode === 'anc_only') {
+    modelGroup.style.display = 'none';
+    tapsGroup.style.display = 'flex';
+    stepGroup.style.display = 'flex';
+  }
+}
+
+/**
  * Execute Full Noise Cancellation Pipeline
  */
 async function runProcessingPipeline() {
@@ -407,7 +473,6 @@ async function runProcessingPipeline() {
   const btnText = document.getElementById('executeBtnText');
   const statusBadge = document.getElementById('systemStatusBadge');
 
-  // Payload assembly
   const mode = document.getElementById('pipelineModeSelect').value;
   const modelName = document.getElementById('modelSelect').value;
   const filterTaps = parseInt(document.getElementById('filterTapsSelect').value, 10);
@@ -447,10 +512,9 @@ async function runProcessingPipeline() {
   try {
     const apiEndpoint = remoteProcessingEnabled ? '/api/process-remote' : '/api/process';
 
-    // Add Pi connection info if remote processing
     if (remoteProcessingEnabled) {
-      payload.pi_host = document.getElementById('piHostInput').value || 'raspberrypi.local';
-      payload.pi_port = parseInt(document.getElementById('piPortInput').value || '8090', 10);
+      payload.pi_host = document.getElementById('piHostInput')?.value || 'raspberrypi.local';
+      payload.pi_port = parseInt(document.getElementById('piPortInput')?.value || '8090', 10);
     }
 
     const res = await fetch(apiEndpoint, {
@@ -468,12 +532,15 @@ async function runProcessingPipeline() {
     lastProcessResult = data;
     renderResults(data);
 
-    // Show Pi telemetry if remote processing
-    if (remoteProcessingEnabled && data.telemetry) {
+    // Show ready badge on Spectral Lab tab
+    const specBadge = document.getElementById('specReadyBadge');
+    if (specBadge) specBadge.style.display = 'inline-block';
+
+    // Update Pi telemetry if returned
+    if (data.telemetry) {
       renderPiTelemetry(data.telemetry, data.metrics);
     }
 
-    // Show mode indicator
     updateModeIndicator(data.has_clean_reference);
 
   } catch (err) {
@@ -489,10 +556,10 @@ async function runProcessingPipeline() {
 }
 
 /**
- * Render Audio, Spectrograms, and Metrics HUD
+ * Render Audio, Spectrograms, Scorecard & Telemetry
  */
 function renderResults(data) {
-  // 1. Audio Players
+  // 1. Audio Players in Studio View
   const inPlayer = document.getElementById('inputAudioPlayer');
   const refPlayer = document.getElementById('refAudioPlayer');
   const outPlayer = document.getElementById('outputAudioPlayer');
@@ -500,185 +567,252 @@ function renderResults(data) {
   const dlBtn = document.getElementById('downloadEnhancedBtn');
   const abToggleBtn = document.getElementById('abToggleBtn');
 
-  if (data.input_audio_base64) {
+  if (data.input_audio_base64 && inPlayer) {
     inPlayer.src = data.input_audio_base64;
   }
 
-  if (data.reference_audio_base64) {
+  if (data.reference_audio_base64 && refPlayer) {
     refPlayer.src = data.reference_audio_base64;
-    refBox.style.display = 'flex';
-  } else {
+    if (refBox) refBox.style.display = 'flex';
+  } else if (refBox) {
     refBox.style.display = 'none';
   }
 
-  if (data.enhanced_audio_base64) {
+  if (data.enhanced_audio_base64 && outPlayer) {
     outPlayer.src = data.enhanced_audio_base64;
-    dlBtn.href = data.enhanced_audio_base64;
-    dlBtn.style.display = 'inline-flex';
-    abToggleBtn.disabled = false;
+    if (dlBtn) {
+      dlBtn.href = data.enhanced_audio_base64;
+      dlBtn.style.display = 'inline-flex';
+    }
+    if (abToggleBtn) abToggleBtn.disabled = false;
   }
 
-  // 2. Spectrograms
-  const inSpecImg = document.getElementById('inputSpectrogramImg');
-  const outSpecImg = document.getElementById('outputSpectrogramImg');
-  const diffSpecImg = document.getElementById('diffSpectrogramImg');
-  const inPh = document.getElementById('inputSpecPlaceholder');
-  const outPh = document.getElementById('outputSpecPlaceholder');
-  const diffPh = document.getElementById('diffSpecPlaceholder');
-
-  if (data.input_spectrogram_base64) {
-    inSpecImg.src = data.input_spectrogram_base64;
-    inSpecImg.style.display = 'block';
-    if (inPh) inPh.style.display = 'none';
-  }
-
-  if (data.output_spectrogram_base64) {
-    outSpecImg.src = data.output_spectrogram_base64;
-    outSpecImg.style.display = 'block';
-    if (outPh) outPh.style.display = 'none';
-  }
-
-  if (data.difference_spectrogram_base64) {
-    diffSpecImg.src = data.difference_spectrogram_base64;
-    diffSpecImg.style.display = 'block';
-    if (diffPh) diffPh.style.display = 'none';
-  }
-
-  // 3. Metrics HUD
+  // 2. Scorecard KPIs
   const m = data.metrics || {};
-  document.getElementById('metricAttenuation').textContent = `${m.estimated_attenuation_db > 0 ? '-' : ''}${Math.abs(m.estimated_attenuation_db || 0).toFixed(1)} dB`;
-
-  if (m.si_snr_improvement_db !== null && m.si_snr_improvement_db !== undefined) {
-    const sign = m.si_snr_improvement_db >= 0 ? '+' : '';
-    document.getElementById('metricSiSnr').textContent = `${sign}${m.si_snr_improvement_db.toFixed(1)} dB`;
-  } else {
-    document.getElementById('metricSiSnr').textContent = 'N/A (Mono)';
+  const attenEl = document.getElementById('metricAttenuation');
+  if (attenEl) {
+    attenEl.textContent = `${m.estimated_attenuation_db > 0 ? '-' : ''}${Math.abs(m.estimated_attenuation_db || 0).toFixed(1)} dB`;
   }
 
-  if (m.stoi_output !== null && m.stoi_output !== undefined) {
-    document.getElementById('metricStoi').textContent = `${m.stoi_input?.toFixed(2) || '0.00'} → ${m.stoi_output.toFixed(2)}`;
-  } else {
-    document.getElementById('metricStoi').textContent = 'N/A (No Ref)';
+  const siSnrEl = document.getElementById('metricSiSnr');
+  if (siSnrEl) {
+    if (m.si_snr_improvement_db !== null && m.si_snr_improvement_db !== undefined) {
+      const sign = m.si_snr_improvement_db >= 0 ? '+' : '';
+      siSnrEl.textContent = `${sign}${m.si_snr_improvement_db.toFixed(1)} dB`;
+    } else {
+      siSnrEl.textContent = 'N/A (No Ref)';
+    }
   }
 
-  document.getElementById('metricRtRatio').textContent = `${(m.realtime_ratio || 0).toFixed(2)}x`;
+  const stoiEl = document.getElementById('metricStoi');
+  if (stoiEl) {
+    if (m.stoi_output !== null && m.stoi_output !== undefined) {
+      stoiEl.textContent = `${m.stoi_input?.toFixed(2) || '0.00'} → ${m.stoi_output.toFixed(2)}`;
+    } else {
+      stoiEl.textContent = 'N/A (No Ref)';
+    }
+  }
+
+  const rtEl = document.getElementById('metricRtRatio');
+  if (rtEl) {
+    rtEl.textContent = `${(m.realtime_ratio || 0).toFixed(2)}x`;
+  }
 
   const rtBadge = document.getElementById('rtRatioBadge');
-  if (m.realtime_ratio && m.realtime_ratio < 1.0) {
-    rtBadge.textContent = `${m.realtime_ratio.toFixed(2)}x REAL-TIME READY`;
-    rtBadge.className = 'badge badge-emerald';
-  } else {
-    rtBadge.textContent = 'HIGH LOAD / BATCH';
-    rtBadge.className = 'badge badge-cyan';
+  if (rtBadge) {
+    if (m.realtime_ratio && m.realtime_ratio < 1.0) {
+      rtBadge.textContent = `${m.realtime_ratio.toFixed(2)}x REAL-TIME READY`;
+      rtBadge.className = 'badge badge-emerald';
+    } else {
+      rtBadge.textContent = 'HIGH LOAD / BATCH';
+      rtBadge.className = 'badge badge-cyan';
+    }
   }
 
-  // 4. Latency Breakdown
+  // 3. Render Spectrograms in Spectral Lab View
+  renderSpectrograms(data);
+
+  // 4. Update Latency Waterfall in Benchmarks View
+  updateLatencyWaterfall(m);
+}
+
+/**
+ * Render High-Resolution Spectrograms in Spectral Lab
+ */
+function renderSpectrograms(data) {
+  const inSpecImg = document.getElementById('inputSpectrogramImg');
+  const outSpecImg = document.getElementById('enhancedSpectrogramImg');
+  const diffSpecImg = document.getElementById('diffSpectrogramImg');
+  const refSpecImg = document.getElementById('refSpectrogramImg');
+  const refItem = document.getElementById('refSpectrogramItem');
+  const placeholder = document.getElementById('specPlaceholder');
+  const sideWrapper = document.getElementById('specSideViews');
+
+  if (placeholder) placeholder.style.display = 'none';
+  if (sideWrapper) sideWrapper.style.display = 'flex';
+
+  if (data.input_spectrogram_base64 && inSpecImg) {
+    inSpecImg.src = data.input_spectrogram_base64;
+  }
+
+  if (data.output_spectrogram_base64 && outSpecImg) {
+    outSpecImg.src = data.output_spectrogram_base64;
+  }
+
+  if (data.difference_spectrogram_base64 && diffSpecImg) {
+    diffSpecImg.src = data.difference_spectrogram_base64;
+  }
+
+  if (data.reference_audio_base64 && refItem && refSpecImg) {
+    refItem.style.display = 'flex';
+    // If reference spectrogram isn't separate, use input/output context
+    refSpecImg.src = data.input_spectrogram_base64;
+  } else if (refItem) {
+    refItem.style.display = 'none';
+  }
+}
+
+/**
+ * Update Latency Waterfall in Benchmarks View
+ */
+function updateLatencyWaterfall(m) {
   const cap = m.capture_ms || 0.8;
   const anc = m.anc_ms || 0.0;
-  const ai = m.ai_ms || 0.0;
+  const ai = m.ai_ms || 5.7;
   const play = m.playback_ms || 1.0;
   const total = cap + anc + ai + play;
 
-  document.getElementById('latencyTotalVal').textContent = `Total: ${total.toFixed(1)} ms`;
-  document.getElementById('valLatCap').textContent = `${cap.toFixed(1)}ms`;
-  document.getElementById('valLatAnc').textContent = `${anc.toFixed(1)}ms`;
-  document.getElementById('valLatAi').textContent = `${ai.toFixed(1)}ms`;
-  document.getElementById('valLatPlay').textContent = `${play.toFixed(1)}ms`;
+  const totalEl = document.getElementById('latencyTotalVal');
+  if (totalEl) totalEl.textContent = `Total: ${total.toFixed(1)} ms`;
+
+  const valCap = document.getElementById('valLatCap');
+  const valAnc = document.getElementById('valLatAnc');
+  const valAi = document.getElementById('valLatAi');
+  const valPlay = document.getElementById('valLatPlay');
+
+  if (valCap) valCap.textContent = `${cap.toFixed(1)} ms`;
+  if (valAnc) valAnc.textContent = `${anc.toFixed(1)} ms`;
+  if (valAi) valAi.textContent = `${ai.toFixed(1)} ms`;
+  if (valPlay) valPlay.textContent = `${play.toFixed(1)} ms`;
 
   const denom = Math.max(total, 0.1);
-  document.getElementById('segCap').style.width = `${(cap / denom) * 100}%`;
-  document.getElementById('segAnc').style.width = `${(anc / denom) * 100}%`;
-  document.getElementById('segAi').style.width = `${(ai / denom) * 100}%`;
-  document.getElementById('segPlay').style.width = `${(play / denom) * 100}%`;
+  const segCap = document.getElementById('segCap');
+  const segAnc = document.getElementById('segAnc');
+  const segAi = document.getElementById('segAi');
+  const segPlay = document.getElementById('segPlay');
+
+  if (segCap) segCap.style.width = `${(cap / denom) * 100}%`;
+  if (segAnc) segAnc.style.width = `${(anc / denom) * 100}%`;
+  if (segAi) segAi.style.width = `${(ai / denom) * 100}%`;
+  if (segPlay) segPlay.style.width = `${(play / denom) * 100}%`;
 }
 
 /**
- * Spectrogram View Switcher (Dual vs Attenuation Heatmap)
+ * Spectrogram View Switcher in Spectral Lab (Side vs Diff)
  */
 function switchSpectrogramTab(view) {
-  const dualView = document.getElementById('spectrogramDualView');
-  const diffView = document.getElementById('spectrogramDiffView');
+  const sideWrapper = document.getElementById('specSideViews');
+  const diffWrapper = document.getElementById('specDiffView');
   const sideBtn = document.getElementById('specTabSideBtn');
   const diffBtn = document.getElementById('specTabDiffBtn');
+  const placeholder = document.getElementById('specPlaceholder');
+
+  // If no audio processed yet, stay on placeholder
+  if (placeholder && placeholder.style.display !== 'none') return;
 
   if (view === 'side') {
-    dualView.style.display = 'grid';
-    diffView.style.display = 'none';
-    sideBtn.classList.add('active');
-    diffBtn.classList.remove('active');
+    if (sideWrapper) sideWrapper.style.display = 'flex';
+    if (diffWrapper) diffWrapper.style.display = 'none';
+    if (sideBtn) sideBtn.classList.add('active');
+    if (diffBtn) diffBtn.classList.remove('active');
   } else {
-    dualView.style.display = 'none';
-    diffView.style.display = 'block';
-    sideBtn.classList.remove('active');
-    diffBtn.classList.add('active');
+    if (sideWrapper) sideWrapper.style.display = 'none';
+    if (diffWrapper) diffWrapper.style.display = 'block';
+    if (sideBtn) sideBtn.classList.remove('active');
+    if (diffBtn) diffBtn.classList.add('active');
   }
 }
 
 /**
- * Instant A/B Audio Switcher
- * Seamlessly toggles playback timestamp between noisy input and enhanced output
+ * Instant A/B Audio Switcher (Channel A Noisy vs Channel C Clean)
  */
 function toggleABPlayback() {
   const inPlayer = document.getElementById('inputAudioPlayer');
   const outPlayer = document.getElementById('outputAudioPlayer');
   const toggleBtnText = document.getElementById('abToggleText');
 
+  if (!inPlayer || !outPlayer) return;
+
   if (activeABChannel === 'output') {
-    // Switch to Noisy Input
     const currTime = outPlayer.currentTime;
     const isPlaying = !outPlayer.paused;
     outPlayer.pause();
     inPlayer.currentTime = currTime;
     if (isPlaying) inPlayer.play();
     activeABChannel = 'input';
-    toggleBtnText.textContent = 'Instant A/B: Switch to Clean';
+    if (toggleBtnText) toggleBtnText.textContent = 'Instant A/B: Switch to Clean';
   } else {
-    // Switch to Clean Output
     const currTime = inPlayer.currentTime;
     const isPlaying = !inPlayer.paused;
     inPlayer.pause();
     outPlayer.currentTime = currTime;
     if (isPlaying) outPlayer.play();
     activeABChannel = 'output';
-    toggleBtnText.textContent = 'Instant A/B: Switch to Noisy';
+    if (toggleBtnText) toggleBtnText.textContent = 'Instant A/B: Switch to Noisy';
   }
 }
 
 /**
- * Pi 5 Remote Processing Toggle Handler
+ * Pi 5 Remote Processing Toggle in Studio
  */
 function onPiToggleChanged() {
   const toggle = document.getElementById('piRemoteToggle');
-  remoteProcessingEnabled = toggle.checked;
+  remoteProcessingEnabled = toggle ? toggle.checked : false;
 
-  const configFields = document.getElementById('piConfigFields');
-  const piModeBadge = document.getElementById('piModeBadge');
+  const modeBadge = document.getElementById('piModeBadge');
+  const quickInfo = document.getElementById('piQuickInfo');
+  const hostDisplay = document.getElementById('piHostDisplay');
+  const hostInput = document.getElementById('piHostInput');
+  const portInput = document.getElementById('piPortInput');
 
   if (remoteProcessingEnabled) {
-    configFields.style.display = 'flex';
-    piModeBadge.style.display = 'inline-block';
-    piModeBadge.textContent = 'PI 5 REMOTE';
-    piModeBadge.className = 'badge badge-emerald';
+    if (modeBadge) modeBadge.style.display = 'inline-block';
+    if (quickInfo) quickInfo.style.display = 'flex';
+    const host = hostInput ? hostInput.value : 'raspberrypi.local';
+    const port = portInput ? portInput.value : '8090';
+    if (hostDisplay) hostDisplay.textContent = `${host}:${port}`;
   } else {
-    configFields.style.display = 'none';
-    piModeBadge.style.display = 'none';
-    // Hide telemetry panel when switching back to local
-    const telCard = document.getElementById('piTelemetryCard');
-    if (telCard) telCard.style.display = 'none';
+    if (modeBadge) modeBadge.style.display = 'none';
+    if (quickInfo) quickInfo.style.display = 'none';
+  }
+}
+
+function syncEdgeViewInputs() {
+  const hostDisplay = document.getElementById('piHostDisplay');
+  const hostInput = document.getElementById('piHostInput');
+  const portInput = document.getElementById('piPortInput');
+
+  if (hostDisplay && hostInput && portInput) {
+    hostDisplay.textContent = `${hostInput.value || 'raspberrypi.local'}:${portInput.value || '8090'}`;
   }
 }
 
 /**
- * Check Pi 5 Health / Connectivity
+ * Check Pi 5 Health & Connectivity (via /api/pi-health server proxy)
  */
 async function checkPiHealth() {
-  const piHost = document.getElementById('piHostInput').value || 'raspberrypi.local';
-  const piPort = document.getElementById('piPortInput').value || '8090';
+  const piHost = document.getElementById('piHostInput')?.value || 'raspberrypi.local';
+  const piPort = document.getElementById('piPortInput')?.value || '8090';
   const dot = document.getElementById('piHealthDot');
   const text = document.getElementById('piHealthText');
+  const banner = document.getElementById('piStatusBanner');
+  const msg = document.getElementById('piStatusMsg');
+  const edgeBadge = document.getElementById('piEdgeStatusBadge');
+  const navDot = document.getElementById('navPiDot');
 
-  dot.className = 'health-dot health-checking';
-  text.textContent = 'Checking...';
+  if (dot) dot.className = 'health-dot health-checking';
+  if (text) text.textContent = 'Testing...';
+  if (msg) msg.textContent = `Connecting to ${piHost}:${piPort}...`;
 
   try {
     const proxyUrl = `/api/pi-health?host=${encodeURIComponent(piHost)}&port=${encodeURIComponent(piPort)}`;
@@ -686,50 +820,113 @@ async function checkPiHealth() {
     const data = await res.json();
 
     if (data.connected && data.data && data.data.status === 'ok') {
-      dot.className = 'health-dot health-ok';
-      text.textContent = `Connected \u2014 ${data.data.model_name || 'Model loaded'}`;
+      if (dot) dot.className = 'health-dot health-ok';
+      if (text) text.textContent = 'Connected';
+      if (edgeBadge) {
+        edgeBadge.textContent = 'ONLINE';
+        edgeBadge.className = 'badge badge-emerald';
+      }
+      if (navDot) navDot.className = 'nav-dot connected';
+      if (msg) {
+        msg.textContent = `Successfully connected to Pi 5 (${data.data.platform || 'ARM Linux'}). Model: ${data.data.model_name || 'DTLN loaded'}.`;
+      }
+      syncEdgeViewInputs();
     } else {
-      dot.className = 'health-dot health-error';
-      text.textContent = data.error || 'Pi unreachable';
+      if (dot) dot.className = 'health-dot health-error';
+      if (text) text.textContent = 'Unreachable';
+      if (edgeBadge) {
+        edgeBadge.textContent = 'OFFLINE';
+        edgeBadge.className = 'badge badge-amber';
+      }
+      if (navDot) navDot.className = 'nav-dot';
+      if (msg) {
+        msg.textContent = data.error || `Unable to reach Pi 5 at ${piHost}:${piPort}. Ensure inference_server.py is running.`;
+      }
     }
   } catch (err) {
-    dot.className = 'health-dot health-error';
-    text.textContent = `Error (${err.message})`;
+    if (dot) dot.className = 'health-dot health-error';
+    if (text) text.textContent = 'Error';
+    if (edgeBadge) {
+      edgeBadge.textContent = 'ERROR';
+      edgeBadge.className = 'badge badge-amber';
+    }
+    if (navDot) navDot.className = 'nav-dot';
+    if (msg) {
+      msg.textContent = `Connection error: ${err.message}`;
+    }
   }
 }
 
 /**
- * Render Pi 5 Edge Telemetry Panel
+ * Render Pi 5 Edge Telemetry Gauges in Edge Hub View
  */
 function renderPiTelemetry(telemetry, metrics) {
-  const card = document.getElementById('piTelemetryCard');
-  if (!card) return;
-  card.style.display = 'flex';
-
-  // CPU Load
+  // 1. CPU Load Gauge
+  const cpuVal = telemetry.cpu_load_percent || 0;
   const cpuEl = document.getElementById('piMetricCpu');
-  cpuEl.textContent = `${(telemetry.cpu_load_percent || 0).toFixed(1)}%`;
+  const cpuBar = document.getElementById('piBarCpu');
+  if (cpuEl) cpuEl.textContent = `${cpuVal.toFixed(1)}%`;
+  if (cpuBar) cpuBar.style.width = `${Math.min(cpuVal, 100)}%`;
 
-  // RAM
+  // 2. RAM Memory Gauge
+  const ramUsed = telemetry.ram_used_mb || 0;
+  const ramTotal = telemetry.ram_total_mb || 0;
+  const ramPct = telemetry.ram_percent || 0;
   const ramEl = document.getElementById('piMetricRam');
   const ramPctEl = document.getElementById('piMetricRamPct');
-  ramEl.textContent = `${(telemetry.ram_used_mb || 0).toFixed(0)} / ${(telemetry.ram_total_mb || 0).toFixed(0)} MB`;
-  ramPctEl.textContent = `${(telemetry.ram_percent || 0).toFixed(1)}% utilized`;
+  const ramBar = document.getElementById('piBarRam');
+  if (ramEl) ramEl.textContent = `${ramUsed.toFixed(0)} / ${ramTotal.toFixed(0)} MB`;
+  if (ramPctEl) ramPctEl.textContent = `${ramPct.toFixed(0)}%`;
+  if (ramBar) ramBar.style.width = `${Math.min(ramPct, 100)}%`;
 
-  // Temperature
+  // 3. SoC Temperature Gauge
+  const temp = telemetry.temperature_c;
   const tempEl = document.getElementById('piMetricTemp');
-  if (telemetry.temperature_c !== null && telemetry.temperature_c !== undefined) {
-    tempEl.textContent = `${telemetry.temperature_c.toFixed(1)}\u00b0C`;
-  } else {
+  const tempBar = document.getElementById('piBarTemp');
+  const tempStatus = document.getElementById('piTempStatus');
+
+  if (temp !== null && temp !== undefined && tempEl) {
+    tempEl.textContent = `${temp.toFixed(1)}°C`;
+    if (tempBar) tempBar.style.width = `${Math.min((temp / 85) * 100, 100)}%`;
+    if (tempStatus) {
+      if (temp < 60) {
+        tempStatus.textContent = 'COOL (<60°C)';
+        tempStatus.className = 'gauge-badge badge-emerald';
+      } else if (temp < 75) {
+        tempStatus.textContent = 'WARM';
+        tempStatus.className = 'gauge-badge badge-amber';
+      } else {
+        tempStatus.textContent = 'THROTTLING';
+        tempStatus.className = 'gauge-badge';
+        tempStatus.style.background = 'rgba(239, 68, 68, 0.2)';
+        tempStatus.style.color = '#ef4444';
+      }
+    }
+  } else if (tempEl) {
     tempEl.textContent = 'N/A';
   }
 
-  // Processing Time
+  // 4. Inference Time Gauge
   const timeEl = document.getElementById('piMetricTime');
   const rtEl = document.getElementById('piMetricRtRatio');
+  const rtBar = document.getElementById('piBarRt');
+  const budgetStatus = document.getElementById('piBudgetStatus');
+
   if (metrics) {
-    timeEl.textContent = `${(metrics.ai_ms || 0).toFixed(1)} ms`;
-    rtEl.textContent = `${(metrics.realtime_ratio || 0).toFixed(3)}x real-time`;
+    const aiMs = metrics.ai_ms || 0;
+    const rtRatio = metrics.realtime_ratio || 0;
+    if (timeEl) timeEl.textContent = `${aiMs.toFixed(1)} ms`;
+    if (rtEl) rtEl.textContent = `${rtRatio.toFixed(3)}x real-time ratio`;
+    if (rtBar) rtBar.style.width = `${Math.min((aiMs / 20) * 100, 100)}%`;
+    if (budgetStatus) {
+      if (aiMs <= 20) {
+        budgetStatus.textContent = '< 20ms BUDGET OK';
+        budgetStatus.className = 'gauge-badge badge-emerald';
+      } else {
+        budgetStatus.textContent = 'EXCEEDS BUDGET';
+        budgetStatus.className = 'gauge-badge badge-amber';
+      }
+    }
   }
 }
 
@@ -742,15 +939,13 @@ function updateModeIndicator(hasCleanReference) {
   const arbBadge = document.getElementById('modeArbitraryBadge');
 
   if (!indicator) return;
-
-  // Show mode indicator only for remote processing or when using presets/uploads
   indicator.style.display = 'block';
 
   if (hasCleanReference) {
-    benchBadge.style.display = 'inline-flex';
-    arbBadge.style.display = 'none';
+    if (benchBadge) benchBadge.style.display = 'inline-flex';
+    if (arbBadge) arbBadge.style.display = 'none';
   } else {
-    benchBadge.style.display = 'none';
-    arbBadge.style.display = 'inline-flex';
+    if (benchBadge) benchBadge.style.display = 'none';
+    if (arbBadge) arbBadge.style.display = 'inline-flex';
   }
 }

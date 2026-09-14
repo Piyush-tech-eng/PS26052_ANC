@@ -112,6 +112,15 @@ class TestInterfaceServerEndpoints:
             assert "ANC COMMAND CENTER" in content
             assert "spectrogram" in content.lower()
 
+    def test_multi_page_routes(self, interface_server: str) -> None:
+        """Verify direct URLs /studio, /spectrograms, /edge, /benchmarks serve the app."""
+        for path in ("/studio", "/spectrograms", "/edge", "/benchmarks"):
+            with urllib.request.urlopen(f"{interface_server}{path}") as resp:
+                assert resp.status == 200
+                content = resp.read().decode("utf-8")
+                assert "PS26052" in content
+                assert "tactical-nav" in content
+
     def test_serve_css(self, interface_server: str) -> None:
         with urllib.request.urlopen(f"{interface_server}/static/style.css") as resp:
             assert resp.status == 200

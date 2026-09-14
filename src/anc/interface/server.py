@@ -47,7 +47,7 @@ class InterfaceRequestHandler(http.server.SimpleHTTPRequestHandler):
         url = urllib.parse.urlparse(self.path)
         path = url.path.rstrip("/")
 
-        if path in ("", "/index.html"):
+        if path in ("", "/index.html", "/studio", "/spectrograms", "/edge", "/benchmarks"):
             self._serve_file(self.base_dir / "templates" / "index.html", "text/html; charset=utf-8")
         elif path == "/static/style.css":
             self._serve_file(self.base_dir / "static" / "style.css", "text/css; charset=utf-8")
