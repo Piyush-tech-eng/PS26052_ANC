@@ -582,3 +582,157 @@ class AudioProcessingPipeline:
             filter_taps=filter_length,
             sample_rate=sample_rate,
         )
+
+    def process_remote(
+        self,
+        audio_in: np.ndarray,
+        enhanced_audio: np.ndarray,
+        sample_rate: int = 16000,
+        clean_reference: np.ndarray | None = None,
+        model_name: str = "Pi 5 DTLN (Remote)",
+        pi_processing_time_ms: float = 0.0,
+        pi_realtime_ratio: float = 0.0,
+    ) -> ProcessResult:
+        """Build a ProcessResult from Pi-processed audio without local inference.
+
+        This method skips all local model inference — the Pi already enhanced
+        the audio. It runs only the existing metrics, spectrogram generation,
+        and audio encoding paths on the returned audio.
+
+        Parameters
+        ----------
+        audio_in : np.ndarray
+            Original noisy input audio (float64, mono, at sample_rate).
+        enhanced_audio : np.ndarray
+            Enhanced audio returned by the Pi 5 inference server.
+        sample_rate : int
+            Audio sample rate (default 16000).
+        clean_reference : np.ndarray or None
+            Clean speech ground-truth for benchmark mode metrics (STOI/PESQ/SI-SNR).
+            None for arbitrary upload mode (metrics will show N/A).
+        model_name : str
+            Display name for the model used on the Pi.
+        pi_processing_time_ms : float
+            Wall-clock processing time reported by the Pi.
+        pi_realtime_ratio : float
+            Real-time ratio reported by the Pi.
+        """
+        t_start = time.perf_counter()
+
+        # Resample to 16 kHz if needed (matching process() logic)
+        target_sr = 16000
+        if sample_rate != target_sr:
+            num_samples = int(len(audio_in) * float(target_sr) / sample_rate)
+            audio_in = scipy.signal.resample(audio_in, num_samples)
+            num_samples_enh = int(len(enhanced_audio) * float(target_sr) / sample_rate)
+            enhanced_audio = scipy.signal.resample(enhanced_audio, num_samples_enh)
+            if clean_reference is not None:
+                num_samples_clean = int(len(clean_reference) * float(target_sr) / sample_rate)
+                clean_reference = scipy.signal.resample(clean_reference, num_samples_clean)
+            sample_rate = target_sr
+
+        # Normalize input audio (matching process() logic)
+        in_max = np.max(np.abs(audio_in)) + 1e-12
+        audio_norm = (audio_in / in_max) * 0.95
+
+        if clean_reference is not None:
+            clean_norm = (clean_reference / (np.max(np.abs(clean_reference)) + 1e-12)) * 0.95
+        else:
+            clean_norm = None
+
+        # Normalize enhanced audio
+        out_peak = np.max(np.abs(enhanced_audio))
+        if out_peak > 0.95:
+            enhanced_audio = (enhanced_audio / out_peak) * 0.95
+
+        t_end = time.perf_counter()
+        local_time = t_end - t_start
+        audio_dur = len(audio_norm) / float(sample_rate)
+
+        # Use Pi-reported timing for the primary metrics
+        total_time_ms = pi_processing_time_ms + (local_time * 1000.0)
+        rt_ratio = pi_realtime_ratio  # Use Pi's ratio as it reflects the actual inference
+
+        # RMS & Attenuation
+        in_rms = float(np.sqrt(np.mean(audio_norm ** 2)))
+        out_rms = float(np.sqrt(np.mean(enhanced_audio ** 2)))
+        atten_db = float(10.0 * np.log10(max(in_rms ** 2, 1e-12) / max(out_rms ** 2, 1e-12)))
+
+        # Quality metrics (if clean reference is available — benchmark mode)
+        si_snr_in: float | None = None
+        si_snr_out: float | None = None
+        si_snr_imp: float | None = None
+        stoi_in: float | None = None
+        stoi_out: float | None = None
+        stoi_imp: float | None = None
+
+        if clean_norm is not None:
+            try:
+                si_snr_in = self.compute_si_snr(clean_norm, audio_norm)
+                si_snr_out = self.compute_si_snr(clean_norm, enhanced_audio)
+                si_snr_imp = si_snr_out - si_snr_in
+            except Exception:
+                pass
+
+            try:
+                import pystoi
+                min_len = min(len(clean_norm), len(audio_norm), len(enhanced_audio))
+                stoi_in = float(pystoi.stoi(clean_norm[:min_len], audio_norm[:min_len], sample_rate, extended=False))
+                stoi_out = float(pystoi.stoi(clean_norm[:min_len], enhanced_audio[:min_len], sample_rate, extended=False))
+                stoi_imp = stoi_out - stoi_in
+            except Exception:
+                pass
+
+        # Metrics bundle
+        metrics = ProcessMetrics(
+            duration_seconds=round(audio_dur, 2),
+            input_rms=round(in_rms, 4),
+            output_rms=round(out_rms, 4),
+            estimated_attenuation_db=round(atten_db, 2),
+            realtime_ratio=round(rt_ratio, 3),
+            total_processing_ms=round(total_time_ms, 1),
+            anc_ms=0.0,  # No local ANC stage
+            ai_ms=round(pi_processing_time_ms, 1),  # Pi inference time
+            capture_ms=0.0,
+            playback_ms=0.0,
+            si_snr_input_db=round(si_snr_in, 2) if si_snr_in is not None else None,
+            si_snr_output_db=round(si_snr_out, 2) if si_snr_out is not None else None,
+            si_snr_improvement_db=round(si_snr_imp, 2) if si_snr_imp is not None else None,
+            stoi_input=round(stoi_in, 3) if stoi_in is not None else None,
+            stoi_output=round(stoi_out, 3) if stoi_out is not None else None,
+            stoi_improvement=round(stoi_imp, 3) if stoi_imp is not None else None,
+            convergence_rate=0.0,
+        )
+
+        # Visualizations — reuse existing spectrogram generators
+        in_spec_b64 = self.generate_spectrogram_base64(
+            audio_norm, sample_rate=sample_rate, title="Input Noisy Signal (0-8 kHz)"
+        )
+        out_spec_b64 = self.generate_spectrogram_base64(
+            enhanced_audio, sample_rate=sample_rate, title=f"Enhanced Output ({model_name})"
+        )
+        diff_spec_b64 = self.generate_difference_spectrogram_base64(
+            audio_norm, enhanced_audio, sample_rate=sample_rate
+        )
+
+        # Audio encodes — reuse existing encoder
+        enhanced_b64 = self.encode_audio_wav_base64(enhanced_audio, sample_rate=sample_rate)
+        in_b64 = self.encode_audio_wav_base64(audio_norm, sample_rate=sample_rate)
+        ref_b64 = self.encode_audio_wav_base64(clean_norm, sample_rate=sample_rate) if clean_norm is not None else ""
+
+        return ProcessResult(
+            success=True,
+            message="Remote processing via Pi 5 completed successfully.",
+            metrics=metrics,
+            enhanced_audio_base64=enhanced_b64,
+            input_audio_base64=in_b64,
+            reference_audio_base64=ref_b64,
+            input_spectrogram_base64=in_spec_b64,
+            output_spectrogram_base64=out_spec_b64,
+            difference_spectrogram_base64=diff_spec_b64,
+            model_name=model_name,
+            mode="pi5_remote",
+            filter_taps=0,
+            sample_rate=sample_rate,
+        )
+

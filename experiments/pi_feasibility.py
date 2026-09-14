@@ -57,6 +57,13 @@ class PiFeasibilityBenchmark:
 
         # ARM Cortex-A53 1.2 GHz scaling factor relative to modern x86 CPU (approx 4.5x)
         self.is_arm = "arm" in platform.machine().lower() or "aarch" in platform.machine().lower()
+        # WARNING (Pi 5 users): This scaling_factor assumes ALL ARM machines are
+        # equivalent to a Raspberry Pi 3 (Cortex-A53, 1.2 GHz, in-order pipeline).
+        # Pi 5 uses Cortex-A76 at 2.4 GHz (out-of-order, much wider pipeline),
+        # which is roughly 3-5x faster per-core than Cortex-A53 for ONNX inference.
+        # Using scaling_factor=1.0 on a Pi 5 will OVER-estimate latency.
+        # This factor needs empirical recalibration on real Pi 5 hardware — do NOT
+        # trust these numbers for Pi 5 performance claims without benchmarking.
         self.scaling_factor = 1.0 if self.is_arm else 4.5
 
     def _generate_test_signals(self) -> tuple[np.ndarray, np.ndarray]:

@@ -22,27 +22,27 @@
   ],
   "signal_metrics": {
     "desired_power": 0.2812331160149755,
-    "estimate_power": 0.2812331160149757,
-    "error_power_mse": 1.5441109771831927e-31,
-    "relative_error_power": 5.490501968839859e-31,
+    "estimate_power": 0.28123311601497536,
+    "error_power_mse": 8.441698381957046e-32,
+    "relative_error_power": 3.001672954300134e-31,
     "explained_power_fraction": 1.0,
     "desired_estimate_correlation": 0.9999999999999999
   },
   "wiener_equation": {
-    "residual_l2_norm": 1.2869730969111293e-16,
-    "relative_residual": 2.421481805667231e-16
+    "residual_l2_norm": 9.71445146547012e-17,
+    "relative_residual": 1.8278056885673695e-16
   },
   "orthogonality": {
-    "maximum_absolute_residual": 2.7933545397430796e-16,
-    "l2_norm": 3.864536496751814e-16
+    "maximum_absolute_residual": 1.6703443474067498e-16,
+    "l2_norm": 2.813274780599594e-16
   },
   "system_comparison": {
     "comparison_length": 7,
-    "coefficient_mse": 2.124025595809923e-32,
-    "coefficient_rmse": 1.4574037175092984e-16,
-    "relative_l2_error": 7.287018587546488e-16,
-    "coefficient_correlation": 1.0,
-    "maximum_absolute_error": 2.7755575615628914e-16
+    "coefficient_mse": 1.1252933532205421e-32,
+    "coefficient_rmse": 1.0607984508004063e-16,
+    "relative_l2_error": 5.303992254002029e-16,
+    "coefficient_correlation": 1.0000000000000002,
+    "maximum_absolute_error": 1.6653345369377348e-16
   },
   "acceptance": {
     "all_values_finite": true,

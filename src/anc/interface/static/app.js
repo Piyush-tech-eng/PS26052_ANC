@@ -10,6 +10,7 @@ let availablePresets = [];
 let uploadedAudioBase64 = null;
 let recordedAudioBase64 = null;
 let lastProcessResult = null;
+let remoteProcessingEnabled = false;
 
 // Microphone Recording State
 let mediaStream = null;
@@ -444,7 +445,15 @@ async function runProcessingPipeline() {
   statusBadge.className = 'pill-val status-live';
 
   try {
-    const res = await fetch('/api/process', {
+    const apiEndpoint = remoteProcessingEnabled ? '/api/process-remote' : '/api/process';
+
+    // Add Pi connection info if remote processing
+    if (remoteProcessingEnabled) {
+      payload.pi_host = document.getElementById('piHostInput').value || 'raspberrypi.local';
+      payload.pi_port = parseInt(document.getElementById('piPortInput').value || '8090', 10);
+    }
+
+    const res = await fetch(apiEndpoint, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -458,6 +467,14 @@ async function runProcessingPipeline() {
 
     lastProcessResult = data;
     renderResults(data);
+
+    // Show Pi telemetry if remote processing
+    if (remoteProcessingEnabled && data.telemetry) {
+      renderPiTelemetry(data.telemetry, data.metrics);
+    }
+
+    // Show mode indicator
+    updateModeIndicator(data.has_clean_reference);
 
   } catch (err) {
     alert(`Server communication error: ${err.message}`);
@@ -624,5 +641,116 @@ function toggleABPlayback() {
     if (isPlaying) outPlayer.play();
     activeABChannel = 'output';
     toggleBtnText.textContent = 'Instant A/B: Switch to Noisy';
+  }
+}
+
+/**
+ * Pi 5 Remote Processing Toggle Handler
+ */
+function onPiToggleChanged() {
+  const toggle = document.getElementById('piRemoteToggle');
+  remoteProcessingEnabled = toggle.checked;
+
+  const configFields = document.getElementById('piConfigFields');
+  const piModeBadge = document.getElementById('piModeBadge');
+
+  if (remoteProcessingEnabled) {
+    configFields.style.display = 'flex';
+    piModeBadge.style.display = 'inline-block';
+    piModeBadge.textContent = 'PI 5 REMOTE';
+    piModeBadge.className = 'badge badge-emerald';
+  } else {
+    configFields.style.display = 'none';
+    piModeBadge.style.display = 'none';
+    // Hide telemetry panel when switching back to local
+    const telCard = document.getElementById('piTelemetryCard');
+    if (telCard) telCard.style.display = 'none';
+  }
+}
+
+/**
+ * Check Pi 5 Health / Connectivity
+ */
+async function checkPiHealth() {
+  const piHost = document.getElementById('piHostInput').value || 'raspberrypi.local';
+  const piPort = document.getElementById('piPortInput').value || '8090';
+  const dot = document.getElementById('piHealthDot');
+  const text = document.getElementById('piHealthText');
+
+  dot.className = 'health-dot health-checking';
+  text.textContent = 'Checking...';
+
+  try {
+    const proxyUrl = `/api/pi-health?host=${encodeURIComponent(piHost)}&port=${encodeURIComponent(piPort)}`;
+    const res = await fetch(proxyUrl);
+    const data = await res.json();
+
+    if (data.connected && data.data && data.data.status === 'ok') {
+      dot.className = 'health-dot health-ok';
+      text.textContent = `Connected \u2014 ${data.data.model_name || 'Model loaded'}`;
+    } else {
+      dot.className = 'health-dot health-error';
+      text.textContent = data.error || 'Pi unreachable';
+    }
+  } catch (err) {
+    dot.className = 'health-dot health-error';
+    text.textContent = `Error (${err.message})`;
+  }
+}
+
+/**
+ * Render Pi 5 Edge Telemetry Panel
+ */
+function renderPiTelemetry(telemetry, metrics) {
+  const card = document.getElementById('piTelemetryCard');
+  if (!card) return;
+  card.style.display = 'flex';
+
+  // CPU Load
+  const cpuEl = document.getElementById('piMetricCpu');
+  cpuEl.textContent = `${(telemetry.cpu_load_percent || 0).toFixed(1)}%`;
+
+  // RAM
+  const ramEl = document.getElementById('piMetricRam');
+  const ramPctEl = document.getElementById('piMetricRamPct');
+  ramEl.textContent = `${(telemetry.ram_used_mb || 0).toFixed(0)} / ${(telemetry.ram_total_mb || 0).toFixed(0)} MB`;
+  ramPctEl.textContent = `${(telemetry.ram_percent || 0).toFixed(1)}% utilized`;
+
+  // Temperature
+  const tempEl = document.getElementById('piMetricTemp');
+  if (telemetry.temperature_c !== null && telemetry.temperature_c !== undefined) {
+    tempEl.textContent = `${telemetry.temperature_c.toFixed(1)}\u00b0C`;
+  } else {
+    tempEl.textContent = 'N/A';
+  }
+
+  // Processing Time
+  const timeEl = document.getElementById('piMetricTime');
+  const rtEl = document.getElementById('piMetricRtRatio');
+  if (metrics) {
+    timeEl.textContent = `${(metrics.ai_ms || 0).toFixed(1)} ms`;
+    rtEl.textContent = `${(metrics.realtime_ratio || 0).toFixed(3)}x real-time`;
+  }
+}
+
+/**
+ * Update Mode Indicator Badge (Benchmark vs Arbitrary Upload)
+ */
+function updateModeIndicator(hasCleanReference) {
+  const indicator = document.getElementById('modeIndicator');
+  const benchBadge = document.getElementById('modeBenchmarkBadge');
+  const arbBadge = document.getElementById('modeArbitraryBadge');
+
+  if (!indicator) return;
+
+  // Show mode indicator only for remote processing or when using presets/uploads
+  indicator.style.display = 'block';
+
+  if (hasCleanReference) {
+    benchBadge.style.display = 'inline-flex';
+    arbBadge.style.display = 'none';
+  } else {
+    benchBadge.style.display = 'none';
+    arbBadge.style.display = 'inline-flex';
   }
 }

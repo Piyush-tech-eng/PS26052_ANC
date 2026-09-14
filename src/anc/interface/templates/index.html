@@ -168,6 +168,52 @@
           </div>
         </div>
 
+        <hr class="divider">
+
+        <!-- Pi 5 Remote Processing Section -->
+        <div class="card-header" style="margin-top: 10px;">
+          <div class="card-title">
+            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+            <h2>3. RASPBERRY PI 5 EDGE PROCESSING</h2>
+          </div>
+          <span class="badge badge-cyan" id="piModeBadge" style="display:none">LOCAL</span>
+        </div>
+
+        <div class="pi-remote-section">
+          <label class="toggle-switch">
+            <input type="checkbox" id="piRemoteToggle" onchange="onPiToggleChanged()">
+            <span class="toggle-slider"></span>
+            <span class="toggle-label">Process on Raspberry Pi 5</span>
+          </label>
+
+          <div class="pi-config-fields" id="piConfigFields" style="display:none">
+            <div class="form-group">
+              <label for="piHostInput">Pi 5 Host</label>
+              <input type="text" id="piHostInput" class="form-control" value="raspberrypi.local" placeholder="raspberrypi.local or IP address">
+            </div>
+            <div class="form-group">
+              <label for="piPortInput">Pi 5 Port</label>
+              <input type="number" id="piPortInput" class="form-control" value="8090" min="1" max="65535">
+            </div>
+            <button type="button" class="btn btn-health-check" id="piHealthBtn" onclick="checkPiHealth()">
+              <span class="health-dot" id="piHealthDot"></span>
+              <span id="piHealthText">Check Connection</span>
+            </button>
+          </div>
+        </div>
+
+        <!-- Metric Mode Indicator -->
+        <div class="mode-indicator" id="modeIndicator" style="display:none">
+          <span class="mode-badge mode-benchmark" id="modeBenchmarkBadge" style="display:none">
+            <svg class="mode-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+            BENCHMARK — Reference Available (STOI/PESQ/SI-SNR Active)
+          </span>
+          <span class="mode-badge mode-arbitrary" id="modeArbitraryBadge" style="display:none">
+            <svg class="mode-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+            ARBITRARY UPLOAD — No Reference (STOI/PESQ: N/A)
+          </span>
+        </div>
+
         <!-- Big Execution Trigger Button -->
         <button type="button" class="btn btn-primary btn-execute" id="executeBtn" onclick="runProcessingPipeline()">
           <span class="btn-spinner" id="executeSpinner" style="display:none"></span>
@@ -333,6 +379,40 @@
               <span class="legend-item"><span class="legend-dot dot-anc"></span> FxNLMS: <strong id="valLatAnc">0.0ms</strong></span>
               <span class="legend-item"><span class="legend-dot dot-ai"></span> Neural AI: <strong id="valLatAi">0.0ms</strong></span>
               <span class="legend-item"><span class="legend-dot dot-play"></span> Playback: <strong id="valLatPlay">1.0ms</strong></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Pi 5 Edge Telemetry Panel (visible only after remote-process) -->
+        <div class="card pi-telemetry-card" id="piTelemetryCard" style="display:none">
+          <div class="card-header">
+            <div class="card-title">
+              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>
+              <h2>RASPBERRY PI 5 — EDGE TELEMETRY</h2>
+            </div>
+            <span class="badge badge-emerald" id="piStatusBadge">CONNECTED</span>
+          </div>
+
+          <div class="metrics-grid pi-metrics-grid">
+            <div class="metric-card">
+              <div class="metric-title">CPU LOAD</div>
+              <div class="metric-value accent-cyan" id="piMetricCpu">0.0%</div>
+              <div class="metric-sub">1-min load average</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-title">RAM USAGE</div>
+              <div class="metric-value accent-blue" id="piMetricRam">0 / 0 MB</div>
+              <div class="metric-sub" id="piMetricRamPct">0% utilized</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-title">CPU TEMP</div>
+              <div class="metric-value accent-amber" id="piMetricTemp">--°C</div>
+              <div class="metric-sub">SoC junction temperature</div>
+            </div>
+            <div class="metric-card">
+              <div class="metric-title">PI PROCESSING</div>
+              <div class="metric-value accent-green" id="piMetricTime">0.0 ms</div>
+              <div class="metric-sub" id="piMetricRtRatio">0.00x real-time</div>
             </div>
           </div>
         </div>

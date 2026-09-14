@@ -862,3 +862,188 @@ body {
 .dot-anc { background-color: var(--accent-amber); }
 .dot-ai { background-color: var(--accent-cyan); }
 .dot-play { background-color: var(--accent-purple); }
+
+/* ==========================================================================
+   Pi 5 Remote Processing Section
+   ========================================================================== */
+
+/* Toggle Switch */
+.pi-remote-section {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.toggle-switch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  cursor: pointer;
+  user-select: none;
+}
+
+.toggle-switch input[type="checkbox"] {
+  display: none;
+}
+
+.toggle-slider {
+  position: relative;
+  width: 40px;
+  height: 22px;
+  background: rgba(100, 116, 139, 0.3);
+  border: 1px solid var(--border-subtle);
+  border-radius: 11px;
+  transition: var(--transition-normal);
+  flex-shrink: 0;
+}
+
+.toggle-slider::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  background: var(--text-muted);
+  border-radius: 50%;
+  transition: var(--transition-normal);
+}
+
+.toggle-switch input:checked + .toggle-slider {
+  background: rgba(16, 185, 129, 0.3);
+  border-color: rgba(16, 185, 129, 0.5);
+}
+
+.toggle-switch input:checked + .toggle-slider::after {
+  transform: translateX(18px);
+  background: var(--accent-green);
+  box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+}
+
+.toggle-label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-main);
+}
+
+/* Pi Config Fields */
+.pi-config-fields {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px;
+  background: rgba(8, 14, 28, 0.5);
+  border: 1px solid var(--border-subtle);
+  border-radius: var(--radius-md);
+  animation: fadeSlideIn 0.25s ease;
+}
+
+@keyframes fadeSlideIn {
+  from { opacity: 0; transform: translateY(-6px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.pi-config-fields .form-group {
+  margin-bottom: 4px;
+}
+
+/* Health Check Button */
+.btn-health-check {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(56, 189, 248, 0.1);
+  border: 1px solid rgba(56, 189, 248, 0.25);
+  color: var(--accent-cyan);
+  padding: 6px 14px;
+  border-radius: var(--radius-sm);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: var(--transition-fast);
+}
+
+.btn-health-check:hover {
+  background: rgba(56, 189, 248, 0.2);
+  box-shadow: 0 0 10px rgba(56, 189, 248, 0.15);
+}
+
+.health-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--text-dim);
+  flex-shrink: 0;
+}
+
+.health-dot.health-ok {
+  background: var(--accent-green);
+  box-shadow: 0 0 6px var(--accent-green);
+}
+
+.health-dot.health-error {
+  background: var(--accent-red);
+  box-shadow: 0 0 6px var(--accent-red);
+}
+
+.health-dot.health-checking {
+  background: var(--accent-amber);
+  animation: pulse-health 0.8s infinite;
+}
+
+@keyframes pulse-health {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.3; }
+}
+
+/* Mode Indicator Badges */
+.mode-indicator {
+  margin-top: 4px;
+}
+
+.mode-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  line-height: 1.3;
+}
+
+.mode-icon {
+  width: 14px;
+  height: 14px;
+  flex-shrink: 0;
+}
+
+.mode-benchmark {
+  background: rgba(16, 185, 129, 0.1);
+  color: var(--accent-green);
+  border: 1px solid rgba(16, 185, 129, 0.3);
+}
+
+.mode-arbitrary {
+  background: rgba(245, 158, 11, 0.1);
+  color: var(--accent-amber);
+  border: 1px solid rgba(245, 158, 11, 0.3);
+}
+
+/* Pi 5 Telemetry Card */
+.pi-telemetry-card {
+  border-color: rgba(16, 185, 129, 0.25);
+  animation: fadeSlideIn 0.3s ease;
+}
+
+.pi-metrics-grid {
+  grid-template-columns: repeat(4, 1fr);
+}
+
+@media (max-width: 840px) {
+  .pi-metrics-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+

@@ -7,7 +7,7 @@ import numpy as np
 
 
 class LocalPiAI:
-    """Runs quantized INT8 or FP32 ONNX DTLN directly on Raspberry Pi 3.
+    """Runs quantized INT8 or FP32 ONNX DTLN directly on Raspberry Pi.
 
     Parameters
     ----------
@@ -15,11 +15,29 @@ class LocalPiAI:
         Directory containing model_1.onnx and model_2.onnx.
     sample_rate : int
         Sample rate (default 16000).
+    intra_op_num_threads : int
+        Number of threads for intra-operator parallelism in ONNX Runtime.
+        Default is 2 (conservative, tuned for Pi 3's Cortex-A53).
+        On Pi 5 (4-core Cortex-A76, 2.4 GHz), consider setting to 4 for
+        better throughput on batch/offline workloads. For real-time streaming
+        with tight frame budgets, 2 may still be optimal to avoid contention.
+    inter_op_num_threads : int
+        Number of threads for inter-operator parallelism. Default is 1.
+        Increasing this is rarely beneficial for the DTLN model's sequential
+        two-stage architecture.
     """
 
-    def __init__(self, model_dir: str | Path = "models/dtln_quantized", sample_rate: int = 16_000) -> None:
+    def __init__(
+        self,
+        model_dir: str | Path = "models/dtln_quantized",
+        sample_rate: int = 16_000,
+        intra_op_num_threads: int = 2,
+        inter_op_num_threads: int = 1,
+    ) -> None:
         self.model_dir = Path(model_dir)
         self.sample_rate = sample_rate
+        self.intra_op_num_threads = intra_op_num_threads
+        self.inter_op_num_threads = inter_op_num_threads
         self.session_1 = None
         self.session_2 = None
         self.frame_len = 512
@@ -33,15 +51,15 @@ class LocalPiAI:
         self._out_buffer = np.zeros(self.frame_len, dtype=np.float32)
 
     def load(self) -> bool:
-        """Load ONNX sessions with optimal single-thread CPU settings."""
+        """Load ONNX sessions with configurable thread settings."""
         try:
             import onnxruntime as ort
         except ImportError:
             return False
 
         opts = ort.SessionOptions()
-        opts.intra_op_num_threads = 2
-        opts.inter_op_num_threads = 1
+        opts.intra_op_num_threads = self.intra_op_num_threads
+        opts.inter_op_num_threads = self.inter_op_num_threads
         opts.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
 
         m1 = self.model_dir / "model_1.onnx"
