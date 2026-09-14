@@ -54,6 +54,9 @@ src/anc/filters/basic.py
 src/anc/interface/__init__.py
 src/anc/interface/processor.py
 src/anc/interface/server.py
+src/anc/interface/static/app.js
+src/anc/interface/static/style.css
+src/anc/interface/templates/index.html
 src/anc/io/__init__.py
 src/anc/io/recordings.py
 src/anc/io/replay.py

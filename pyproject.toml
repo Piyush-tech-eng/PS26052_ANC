@@ -89,6 +89,9 @@ anc-app = "anc.interface.server:main"
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"*" = ["*.html", "*.css", "*.js", "*.png", "*.svg", "*.json"]
+
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

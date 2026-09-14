@@ -57,6 +57,9 @@ class InterfaceRequestHandler(http.server.SimpleHTTPRequestHandler):
             self._handle_get_hardware()
         elif path == "/api/health":
             self._json_response({"status": "ok", "app": "PS26052 ANC Unified Interface"})
+        elif path == "/favicon.ico":
+            self.send_response(204)
+            self.end_headers()
         else:
             self.send_error(404, f"Path not found: {url.path}")
 

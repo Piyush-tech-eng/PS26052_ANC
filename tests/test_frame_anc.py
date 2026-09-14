@@ -133,6 +133,18 @@ class TestFrameANCValidation:
         with pytest.raises(ValueError):
             FrameANCConfig(algorithm="invalid")
 
+    def test_invalid_leakage(self) -> None:
+        with pytest.raises(ValueError, match="leakage"):
+            FrameANCConfig(leakage=-0.1)
+        with pytest.raises(ValueError, match="leakage"):
+            FrameANCConfig(leakage=1.0)
+
+    def test_invalid_max_weight_norm(self) -> None:
+        with pytest.raises(ValueError, match="max_weight_norm"):
+            FrameANCConfig(max_weight_norm=0.0)
+        with pytest.raises(ValueError, match="max_weight_norm"):
+            FrameANCConfig(max_weight_norm=-1.5)
+
     def test_reset_zeros_state(self) -> None:
         ref, dist, s_true, s_model = _make_test_signals(num_samples=200)
         config = FrameANCConfig(filter_length=16, algorithm="fxnlms")
@@ -140,3 +152,22 @@ class TestFrameANCValidation:
         anc.process_frame(ref, dist)
         anc.reset()
         np.testing.assert_array_equal(anc.coefficients, np.zeros(16))
+
+    def test_leakage_decays_coefficients(self) -> None:
+        """With zero input but non-zero initial coefficients and leakage, coefficients should decay."""
+        _, _, s_true, s_model = _make_test_signals()
+        config = FrameANCConfig(filter_length=16, algorithm="fxnlms", leakage=0.05)
+        anc = FrameANC(config, s_true, s_model)
+        anc._coefficients.fill(1.0)
+        init_norm = np.linalg.norm(anc.coefficients)
+        anc.process_sample(0.0, 0.0)
+        assert np.linalg.norm(anc.coefficients) < init_norm
+
+    def test_max_weight_norm_clamps_coefficients(self) -> None:
+        """Coefficients exceeding max_weight_norm should be clamped."""
+        ref, dist, s_true, s_model = _make_test_signals(num_samples=200)
+        config = FrameANCConfig(filter_length=16, algorithm="fxnlms", step_size=0.5, max_weight_norm=0.25)
+        anc = FrameANC(config, s_true, s_model)
+        anc.process_frame(ref, dist)
+        assert np.linalg.norm(anc.coefficients) <= 0.25 + 1e-6
+

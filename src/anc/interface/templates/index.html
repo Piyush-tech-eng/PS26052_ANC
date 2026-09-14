@@ -3,341 +3,454 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>PS26052 ANC — Unified Tactical Command Center & Speech Enhancement Suite</title>
-  <meta name="description" content="End-to-end adaptive noise cancellation and neural speech enhancement interface for defence communications.">
+  <title>PS26052 ANC — Adaptive Noise Cancellation &amp; Neural Speech Enhancement</title>
+  <meta name="description" content="AI-driven Adaptive Noise Cancellation and Neural Speech Enhancement Command Center.">
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
-  <div class="app-layout">
-    <!-- Top Tactical Navigation Bar -->
-    <header class="tactical-header">
-      <div class="brand-group">
-        <div class="radar-indicator">
-          <span class="pulse-ring"></span>
-          <span class="radar-dot"></span>
+  <div class="app-container">
+    <!-- 1. LEFT SIDEBAR NAVIGATION -->
+    <aside class="sidebar">
+      <div class="sidebar-brand">
+        <div class="brand-logo-bars">
+          <span class="bar bar-1"></span>
+          <span class="bar bar-2"></span>
+          <span class="bar bar-3"></span>
+          <span class="bar bar-4"></span>
+          <span class="bar bar-5"></span>
         </div>
-        <div class="brand-text">
-          <h1>PS26052 <span class="accent-cyan">ANC COMMAND CENTER</span></h1>
-          <span class="subtext">Adaptive Noise Cancellation & Neural Speech Enhancement Suite</span>
-        </div>
-      </div>
-
-      <div class="system-telemetry-pills">
-        <div class="pill">
-          <span class="pill-label">STATUS</span>
-          <span class="pill-val status-live" id="systemStatusBadge">STANDBY / READY</span>
-        </div>
-        <div class="pill">
-          <span class="pill-label">PLATFORM</span>
-          <span class="pill-val" id="platformBadge">Initializing...</span>
-        </div>
-        <div class="pill">
-          <span class="pill-label">SAMPLE RATE</span>
-          <span class="pill-val mono">16,000 Hz</span>
-        </div>
-        <div class="pill">
-          <span class="pill-label">FRAME BUDGET</span>
-          <span class="pill-val mono">&lt; 20.0 ms</span>
+        <div class="brand-titles" aria-label="PS26052 ANC COMMAND CENTER">
+          <div class="brand-main">PS26052 <span class="brand-accent">ANC</span></div>
+          <div class="brand-sub">Adaptive Noise Cancellation &amp; Neural Speech Enhancement</div>
+          <span style="display:none">ANC COMMAND CENTER</span>
         </div>
       </div>
-    </header>
 
-    <!-- Main Grid Content -->
-    <main class="main-dashboard-grid">
-      <!-- Left Column: Input Source & Algorithm Configuration Deck -->
-      <section class="card control-deck">
-        <div class="card-header">
-          <div class="card-title">
-            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
-            <h2>1. AUDIO INPUT & SOURCE</h2>
-          </div>
-          <span class="badge badge-cyan" id="selectedSourceBadge">PRESET</span>
-        </div>
+      <nav class="sidebar-nav">
+        <a href="#home" class="nav-item active" id="navHome" onclick="setActiveNav(this); return false;">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="currentColor"><path d="M10 20v-6h4v6h5v-8h3L12 3 2 12h3v8z"/></svg>
+          <span>Home</span>
+        </a>
+        <a href="#source" class="nav-item" id="navSource" onclick="setActiveNav(this); openSourceModal(); return false;">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+          <span>Audio &amp; Source</span>
+        </a>
+        <a href="#engine" class="nav-item" id="navEngine" onclick="setActiveNav(this); scrollToSection('engineConfigCard'); return false;">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+          <span>Processing Engine</span>
+        </a>
+        <a href="#spectrograms" class="nav-item" id="navViz" onclick="setActiveNav(this); scrollToSection('spectrogramRow'); return false;">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+          <span>Visualization</span>
+        </a>
+        <a href="#playback" class="nav-item" id="navPlay" onclick="setActiveNav(this); scrollToSection('audioStationCard'); return false;">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
+          <span>Playback</span>
+        </a>
+        <a href="#metrics" class="nav-item" id="navMetrics" onclick="setActiveNav(this); scrollToSection('metricsCard'); return false;">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+          <span>Results &amp; Metrics</span>
+        </a>
+        <a href="#settings" class="nav-item" id="navSettings" onclick="setActiveNav(this); openSourceModal(); return false;">
+          <svg class="nav-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="4" y1="21" x2="4" y2="14"/><line x1="4" y1="10" x2="4" y2="3"/><line x1="12" y1="21" x2="12" y2="12"/><line x1="12" y1="8" x2="12" y2="3"/><line x1="20" y1="21" x2="20" y2="16"/><line x1="20" y1="12" x2="20" y2="3"/><line x1="1" y1="14" x2="7" y2="14"/><line x1="9" y1="8" x2="15" y2="8"/><line x1="17" y1="16" x2="23" y2="16"/></svg>
+          <span>Settings</span>
+        </a>
+      </nav>
 
-        <!-- Input Source Tabs -->
-        <div class="source-tabs">
-          <button type="button" class="tab-btn active" id="tabPresetBtn" onclick="switchSourceTab('preset')">
-            <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z"/></svg>
-            Preset Library
-          </button>
-          <button type="button" class="tab-btn" id="tabUploadBtn" onclick="switchSourceTab('upload')">
-            <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
-            File Upload
-          </button>
-          <button type="button" class="tab-btn" id="tabMicBtn" onclick="switchSourceTab('mic')">
-            <svg class="tab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
-            Live Record
-          </button>
-        </div>
-
-        <!-- Tab 1: Presets -->
-        <div class="tab-content active" id="tabPresetContent">
-          <div class="form-group">
-            <label for="presetSelect">Select Defence Noise Scenario</label>
-            <select id="presetSelect" class="form-control" onchange="onPresetSelected()">
-              <option value="" disabled selected>Loading curated presets...</option>
-            </select>
+      <div class="sidebar-footer">
+        <div class="footer-card">
+          <div class="footer-logo-bars">
+            <span></span><span></span><span></span><span></span>
           </div>
-          <div class="preset-info-box" id="presetInfoBox">
-            <span class="info-label">Scenario Context:</span>
-            <span id="presetDetailsText">Select a noisy defence audio sample above to evaluate.</span>
-          </div>
-        </div>
-
-        <!-- Tab 2: Upload -->
-        <div class="tab-content" id="tabUploadContent">
-          <div class="dropzone" id="fileDropzone" onclick="document.getElementById('audioFileInput').click()">
-            <input type="file" id="audioFileInput" accept=".wav,.mp3,.flac,.ogg" style="display:none" onchange="handleFileSelected(event)">
-            <svg class="dropzone-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 13h6m-3-3v6m5 5H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5.586a1 1 0 0 1 .707.293l5.414 5.414a1 1 0 0 1 .293.707V19a2 2 0 0 1-2 2z"/></svg>
-            <p class="dropzone-title">Click or Drag & Drop Audio File</p>
-            <p class="dropzone-sub">Supports WAV, MP3, FLAC, OGG (auto-resampled to 16 kHz mono)</p>
-          </div>
-          <div class="file-loaded-banner" id="fileLoadedBanner" style="display:none">
-            <span class="file-name" id="loadedFileName">filename.wav</span>
-            <span class="file-size" id="loadedFileSize">0 KB</span>
+          <div class="footer-text">
+            <div class="footer-title">PS26052 ANC</div>
+            <div class="footer-version">v1.0.0</div>
           </div>
         </div>
+      </div>
+    </aside>
 
-        <!-- Tab 3: Live Microphone -->
-        <div class="tab-content" id="tabMicContent">
-          <div class="mic-recorder-card">
-            <div class="mic-visualizer-container">
-              <canvas id="micOscilloscopeCanvas" width="340" height="90"></canvas>
-              <div class="record-timer" id="recordTimer">00:00.0</div>
+    <!-- 2. MAIN CONTENT AREA -->
+    <div class="main-content">
+      <!-- TOP STATUS WIDGET BAR -->
+      <header class="top-bar">
+        <button type="button" class="menu-toggle-btn" title="Toggle Navigation">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+        </button>
+
+        <div class="top-status-cards">
+          <!-- Widget 1: System Ready -->
+          <div class="status-widget widget-status">
+            <span class="status-indicator-dot"></span>
+            <div class="widget-text">
+              <span class="widget-title" id="systemStatusBadge">System Ready</span>
+              <span class="widget-sub">All modules loaded</span>
             </div>
-            <div class="mic-controls">
-              <button type="button" class="btn btn-record" id="micRecordBtn" onclick="toggleMicRecording()">
-                <span class="rec-dot"></span>
-                <span id="micRecordBtnText">Start Recording</span>
+          </div>
+
+          <!-- Widget 2: Platform -->
+          <div class="status-widget widget-platform">
+            <svg class="widget-icon icon-windows" viewBox="0 0 24 24" fill="currentColor"><path d="M0 3.449L9.75 2.1v9.451H0m10.949-9.602L24 0v11.4H10.949M0 12.6H9.75v9.451L0 20.699M10.949 12.6H24V24l-12.9-1.801"/></svg>
+            <div class="widget-text">
+              <span class="widget-title" id="platformBadge">Windows 11 (AMD64)</span>
+              <span class="widget-sub">Platform</span>
+            </div>
+          </div>
+
+          <!-- Widget 3: Sample Rate -->
+          <div class="status-widget widget-rate">
+            <svg class="widget-icon icon-purple" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+            <div class="widget-text">
+              <span class="widget-title mono">16,000 Hz</span>
+              <span class="widget-sub">Sample Rate</span>
+            </div>
+          </div>
+
+          <!-- Widget 4: Frame Budget -->
+          <div class="status-widget widget-budget">
+            <svg class="widget-icon icon-amber" viewBox="0 0 24 24" fill="currentColor"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+            <div class="widget-text">
+              <span class="widget-title mono">&lt; 20.0 ms</span>
+              <span class="widget-sub">Frame Budget</span>
+            </div>
+          </div>
+        </div>
+
+        <!-- EXECUTE BUTTON -->
+        <button type="button" class="btn-execute-glow" id="executeBtn" onclick="runProcessingPipeline()">
+          <span class="execute-icon-wrap">
+            <span class="btn-spinner" id="executeSpinner" style="display:none"></span>
+            <svg class="execute-play-icon" id="executeIcon" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          </span>
+          <div class="execute-labels">
+            <span class="exec-primary" id="executeBtnText">Execute</span>
+            <span class="exec-sub">Noise Cancellation</span>
+          </div>
+        </button>
+      </header>
+
+      <!-- DASHBOARD ROWS -->
+      <div class="dashboard-body">
+        <!-- ROW 1: DUAL SPECTROGRAMS -->
+        <div class="spectrogram-row" id="spectrogramRow">
+          <!-- Card Left: Input Noisy Signal -->
+          <div class="glass-card spec-card card-noisy">
+            <div class="card-head">
+              <div class="head-left">
+                <svg class="head-icon icon-red" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+                <h3>Input Noisy Signal (0 – 8 kHz)</h3>
+              </div>
+              <button type="button" class="pill-badge badge-red-glow" id="currentPresetPill" onclick="openSourceModal()" title="Click to change preset or source">
+                <span id="currentPresetPillText">ENGINE Noise (SNR +0 dB)</span>
               </button>
             </div>
-            <p class="mic-hint">Speak with background disturbance. Recording will automatically stream to the ANC pipeline upon stop.</p>
-          </div>
-        </div>
-
-        <hr class="divider">
-
-        <!-- Algorithm & Model Parameters -->
-        <div class="card-header" style="margin-top: 10px;">
-          <div class="card-title">
-            <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
-            <h2>2. PROCESSING ENGINE</h2>
-          </div>
-        </div>
-
-        <div class="form-grid">
-          <div class="form-group">
-            <label for="pipelineModeSelect">Architecture Cascade</label>
-            <select id="pipelineModeSelect" class="form-control" onchange="onModeChanged()">
-              <option value="hybrid" selected>Hybrid (FxNLMS + Deep AI) [Recommended]</option>
-              <option value="ai_only">AI-Only (Neural DTLN/TasNet)</option>
-              <option value="anc_only">Classical ANC-Only (FxNLMS)</option>
-            </select>
-          </div>
-
-          <div class="form-group" id="modelSelectGroup">
-            <label for="modelSelect">Neural Model Backend</label>
-            <select id="modelSelect" class="form-control">
-              <option value="dtln_quantized" selected>DTLN Quantized (INT8 - Realtime Edge)</option>
-              <option value="dtln_finetuned">DTLN Fine-Tuned (PyTorch Checkpoint)</option>
-              <option value="dtln">DTLN Stock (FP32 ONNX)</option>
-              <option value="spectral_gate">Spectral Gating (Classical DSP Baseline)</option>
-            </select>
-          </div>
-
-          <div class="form-group anc-param" id="filterTapsGroup">
-            <label for="filterTapsSelect">Classical Filter Length</label>
-            <select id="filterTapsSelect" class="form-control">
-              <option value="32">32 Taps (Ultra-low latency)</option>
-              <option value="64" selected>64 Taps (Optimal balance)</option>
-              <option value="128">128 Taps (Deep reverberant)</option>
-            </select>
-          </div>
-
-          <div class="form-group anc-param" id="stepSizeGroup">
-            <label for="stepSizeSelect">FxNLMS Step Size (&mu;)</label>
-            <select id="stepSizeSelect" class="form-control">
-              <option value="0.005">0.005 (Conservative / Low Distortion)</option>
-              <option value="0.01" selected>0.010 (Nominal Defence Setting)</option>
-              <option value="0.02">0.020 (Fast Adaptation)</option>
-              <option value="0.05">0.050 (Aggressive Transient)</option>
-            </select>
-          </div>
-        </div>
-
-        <!-- Big Execution Trigger Button -->
-        <button type="button" class="btn btn-primary btn-execute" id="executeBtn" onclick="runProcessingPipeline()">
-          <span class="btn-spinner" id="executeSpinner" style="display:none"></span>
-          <svg class="btn-icon" id="executeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><polygon points="5 3 19 12 5 21 5 3"/></svg>
-          <span id="executeBtnText">EXECUTE NOISE CANCELLATION</span>
-        </button>
-      </section>
-
-      <!-- Center & Right: Spectrograms, Audio A/B Station, & Metrics HUD -->
-      <section class="results-deck">
-        <!-- Spectrogram Analysis Card -->
-        <div class="card spectrogram-card">
-          <div class="card-header">
-            <div class="card-title">
-              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M2 12h5l3 8 4-16 3 8h5"/></svg>
-              <h2>TIME-FREQUENCY SPECTROGRAM COMPARISON (0 – 8 kHz)</h2>
-            </div>
-            <div class="spectrogram-tabs">
-              <button type="button" class="mini-tab active" id="specTabSideBtn" onclick="switchSpectrogramTab('side')">Dual View</button>
-              <button type="button" class="mini-tab" id="specTabDiffBtn" onclick="switchSpectrogramTab('diff')">Attenuation Heatmap</button>
-            </div>
-          </div>
-
-          <div class="spectrogram-container" id="spectrogramContainer">
-            <!-- Dual View: Input vs Output -->
-            <div class="spectrogram-dual-grid" id="spectrogramDualView">
-              <div class="spec-box">
-                <div class="spec-tag spec-input-tag">INPUT NOISY SIGNAL</div>
-                <div class="spec-image-wrapper">
-                  <img id="inputSpectrogramImg" src="" alt="Input Spectrogram" style="display:none">
-                  <div class="spec-placeholder" id="inputSpecPlaceholder">
-                    <svg class="ph-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M2 12h5l3 8 4-16 3 8h5"/></svg>
-                    <span>Execute pipeline to generate Input Spectrogram</span>
-                  </div>
+            <div class="spec-viewer-wrapper">
+              <div class="axis-y-label">Frequency (kHz)</div>
+              <div class="axis-y-ticks">
+                <span>8</span><span>6</span><span>4</span><span>2</span><span>0</span>
+              </div>
+              <div class="spec-display-box">
+                <img id="inputSpectrogramImg" class="spectrogram-img" src="" alt="Input Spectrogram" style="display:none">
+                <canvas id="inputSpecCanvas" class="spectrogram-canvas" width="640" height="200"></canvas>
+                <div class="spec-empty-overlay" id="inputSpecPlaceholder" style="display:none">
+                  <span>Execute pipeline to compute spectrogram</span>
                 </div>
               </div>
-
-              <div class="spec-box">
-                <div class="spec-tag spec-output-tag">ENHANCED SPEECH OUTPUT</div>
-                <div class="spec-image-wrapper">
-                  <img id="outputSpectrogramImg" src="" alt="Output Spectrogram" style="display:none">
-                  <div class="spec-placeholder" id="outputSpecPlaceholder">
-                    <svg class="ph-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1"><path d="M2 12h5l3 8 4-16 3 8h5"/></svg>
-                    <span>Execute pipeline to generate Output Spectrogram</span>
-                  </div>
-                </div>
+              <div class="axis-x-ticks">
+                <span>0</span><span>2</span><span>4</span><span>6</span><span>8</span><span>10</span>
               </div>
+              <div class="axis-x-label">Time (s)</div>
             </div>
+          </div>
 
-            <!-- Heatmap View: Difference Spectrogram -->
-            <div class="spectrogram-single-view" id="spectrogramDiffView" style="display:none">
-              <div class="spec-box">
-                <div class="spec-tag spec-diff-tag">NOISE ATTENUATION MAP (dB ENERGY SUPPRESSION)</div>
-                <div class="spec-image-wrapper">
-                  <img id="diffSpectrogramImg" src="" alt="Attenuation Map" style="display:none">
-                  <div class="spec-placeholder" id="diffSpecPlaceholder">
-                    <span>Execute pipeline to generate Noise Attenuation Map</span>
-                  </div>
+          <!-- Card Right: Enhanced Speech Output -->
+          <div class="glass-card spec-card card-enhanced">
+            <div class="card-head">
+              <div class="head-left">
+                <svg class="head-icon icon-green" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/></svg>
+                <h3>Enhanced Speech Output (0 – 8 kHz)</h3>
+              </div>
+              <span class="pill-badge badge-green-glow" id="aiEnhancedPill">AI Enhanced Output</span>
+            </div>
+            <div class="spec-viewer-wrapper">
+              <div class="axis-y-label">Frequency (kHz)</div>
+              <div class="axis-y-ticks">
+                <span>8</span><span>6</span><span>4</span><span>2</span><span>0</span>
+              </div>
+              <div class="spec-display-box">
+                <img id="outputSpectrogramImg" class="spectrogram-img" src="" alt="Output Spectrogram" style="display:none">
+                <canvas id="outputSpecCanvas" class="spectrogram-canvas" width="640" height="200"></canvas>
+                <div class="spec-empty-overlay" id="outputSpecPlaceholder" style="display:none">
+                  <span>Execute pipeline to compute enhanced spectrogram</span>
                 </div>
               </div>
+              <div class="axis-x-ticks">
+                <span>0</span><span>2</span><span>4</span><span>6</span><span>8</span><span>10</span>
+              </div>
+              <div class="axis-x-label">Time (s)</div>
             </div>
           </div>
         </div>
 
-        <!-- Audio A/B Listening Station & Download Bar -->
-        <div class="card audio-station-card">
-          <div class="card-header">
-            <div class="card-title">
-              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"/><path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"/></svg>
-              <h2>A/B AUDIO LISTENING STATION & PLAYBACK</h2>
+        <!-- ROW 2: AUDIO PLAYBACK & LISTENING STATION -->
+        <div class="glass-card audio-station-card" id="audioStationCard">
+          <div class="card-head">
+            <div class="head-left">
+              <svg class="head-icon icon-blue" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 18v-6a9 9 0 0 1 18 0v6"/><path d="M21 19a2 2 0 0 1-2 2h-1a2 2 0 0 1-2-2v-3a2 2 0 0 1 2-2h3zM3 19a2 2 0 0 0 2 2h1a2 2 0 0 0 2-2v-3a2 2 0 0 0-2-2H3z"/></svg>
+              <h3>Audio Playback &amp; Listening Station</h3>
             </div>
-            <!-- Instant A/B Toggle Switcher -->
-            <button type="button" class="btn btn-ab-toggle" id="abToggleBtn" onclick="toggleABPlayback()" disabled>
-              <svg class="ab-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="17 1 21 5 17 9"/><path d="M3 11V9a4 4 0 0 1 4-4h14"/><polyline points="7 23 3 19 7 15"/><path d="M21 13v2a4 4 0 0 1-4 4H3"/></svg>
-              <span id="abToggleText">Instant A/B: Switch to Clean</span>
+            <button type="button" class="btn-ab-switch" id="abToggleBtn" onclick="toggleABPlayback()" disabled>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 3 21 3 21 8"/><line x1="4" y1="20" x2="21" y2="3"/><polyline points="21 16 21 21 16 21"/><line x1="15" y1="15" x2="21" y2="21"/><line x1="4" y1="4" x2="9" y2="9"/></svg>
+              <span id="abToggleText">Switch to Clean (Instant A/B)</span>
             </button>
           </div>
 
-          <div class="audio-channels-grid">
-            <!-- Channel 1: Input Noisy -->
-            <div class="audio-channel-box">
-              <div class="channel-header">
-                <span class="channel-dot dot-amber"></span>
-                <span class="channel-name">1. Input Audio (Disturbed)</span>
+          <div class="audio-players-grid">
+            <!-- Player 1: Input Audio -->
+            <div class="audio-item">
+              <div class="player-header">
+                <span class="player-dot dot-red"></span>
+                <span class="player-title">1. Input Audio (Disturbed)</span>
               </div>
-              <audio id="inputAudioPlayer" controls class="custom-audio-player"></audio>
+              <audio id="inputAudioPlayer" controls class="custom-audio"></audio>
             </div>
 
-            <!-- Channel 2: Clean Reference (if available) -->
-            <div class="audio-channel-box" id="refChannelBox">
-              <div class="channel-header">
-                <span class="channel-dot dot-blue"></span>
-                <span class="channel-name">2. Clean Target Reference</span>
+            <!-- Player 2: Clean Target -->
+            <div class="audio-item" id="refChannelBox">
+              <div class="player-header">
+                <span class="player-dot dot-blue"></span>
+                <span class="player-title">2. Clean Target Reference</span>
               </div>
-              <audio id="refAudioPlayer" controls class="custom-audio-player"></audio>
+              <audio id="refAudioPlayer" controls class="custom-audio"></audio>
             </div>
 
-            <!-- Channel 3: Enhanced Output -->
-            <div class="audio-channel-box enhanced-channel">
-              <div class="channel-header">
-                <span class="channel-dot dot-green"></span>
-                <span class="channel-name">3. Enhanced Output (Cleaned)</span>
-                <a id="downloadEnhancedBtn" href="#" download="enhanced_audio.wav" class="btn-download" style="display:none">
-                  <svg class="dl-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-                  Download WAV
+            <!-- Player 3: Enhanced Output -->
+            <div class="audio-item">
+              <div class="player-header">
+                <span class="player-dot dot-green"></span>
+                <span class="player-title">3. Enhanced Output (Cleaned)</span>
+                <a id="downloadEnhancedBtn" href="#" download="enhanced_audio.wav" class="dl-link" style="display:none" title="Download WAV">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
                 </a>
               </div>
-              <audio id="outputAudioPlayer" controls class="custom-audio-player"></audio>
+              <audio id="outputAudioPlayer" controls class="custom-audio"></audio>
             </div>
           </div>
         </div>
 
-        <!-- Telemetry & Empirical Performance HUD -->
-        <div class="card telemetry-card">
-          <div class="card-header">
-            <div class="card-title">
-              <svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
-              <h2>TELEMETRY & QUANTITATIVE BENCHMARK HUD</h2>
+        <!-- ROW 3: PROCESSING ENGINE (LEFT) & METRICS (RIGHT) -->
+        <div class="bottom-row">
+          <!-- Left: Processing Engine Configuration -->
+          <div class="glass-card engine-config-card" id="engineConfigCard">
+            <div class="card-head">
+              <div class="head-left">
+                <svg class="head-icon icon-blue" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+                <h3>Processing Engine Configuration</h3>
+              </div>
             </div>
-            <span class="badge badge-emerald" id="rtRatioBadge">&lt; 1.0x REAL-TIME READY</span>
+
+            <div class="engine-form">
+              <div class="select-group">
+                <label for="pipelineModeSelect">Architecture Cascade</label>
+                <div class="select-wrapper">
+                  <select id="pipelineModeSelect" class="form-select" onchange="onModeChanged()">
+                    <option value="hybrid" selected>Hybrid (FxNLMS + Deep AI) [Recommended]</option>
+                    <option value="ai_only">AI-Only (Neural DTLN/TasNet)</option>
+                    <option value="anc_only">Classical ANC-Only (FxNLMS)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="select-group" id="modelSelectGroup">
+                <label for="modelSelect">Neural Model Backend</label>
+                <div class="select-wrapper">
+                  <select id="modelSelect" class="form-select">
+                    <option value="dtln_quantized" selected>DTLN Quantized (INT8 - Realtime Edge)</option>
+                    <option value="dtln_finetuned">DTLN Fine-Tuned (PyTorch Checkpoint)</option>
+                    <option value="dtln">DTLN Stock (FP32 ONNX)</option>
+                    <option value="spectral_gate">Spectral Gating (Classical DSP Baseline)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="select-group" id="filterTapsGroup">
+                <label for="filterTapsSelect">Classical Filter Length</label>
+                <div class="select-wrapper">
+                  <select id="filterTapsSelect" class="form-select">
+                    <option value="64" selected>64 Taps (Optimal balance)</option>
+                    <option value="32">32 Taps (Ultra-low latency)</option>
+                    <option value="128">128 Taps (Deep reverberant)</option>
+                  </select>
+                </div>
+              </div>
+
+              <div class="select-group" id="stepSizeGroup">
+                <label for="stepSizeSelect">FxNLMS Step Size (μ)</label>
+                <div class="select-wrapper">
+                  <select id="stepSizeSelect" class="form-select">
+                    <option value="0.01" selected>0.010 (Nominal Defence Setting)</option>
+                    <option value="0.005">0.005 (Conservative / Low Distortion)</option>
+                    <option value="0.02">0.020 (Fast Adaptation)</option>
+                    <option value="0.05">0.050 (Aggressive Transient)</option>
+                  </select>
+                </div>
+              </div>
+            </div>
           </div>
 
-          <div class="metrics-grid">
-            <div class="metric-card">
-              <div class="metric-title">EST. ATTENUATION</div>
-              <div class="metric-value accent-cyan" id="metricAttenuation">-0.0 dB</div>
-              <div class="metric-sub">Broadband acoustic reduction</div>
+          <!-- Right: Key Performance Metrics -->
+          <div class="glass-card metrics-card" id="metricsCard">
+            <div class="card-head">
+              <div class="head-left">
+                <svg class="head-icon icon-blue" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></svg>
+                <h3>Key Performance Metrics</h3>
+              </div>
+              <span class="pill-badge badge-green-glow" id="rtRatioBadge">&lt; 1.0x REAL-TIME READY</span>
             </div>
 
-            <div class="metric-card">
-              <div class="metric-title">SI-SNR IMPROVEMENT</div>
-              <div class="metric-value accent-green" id="metricSiSnr">+0.0 dB</div>
-              <div class="metric-sub">Scale-Invariant SNR gain</div>
+            <!-- 4 Metric Cards in a Row -->
+            <div class="metrics-quad-grid">
+              <!-- Metric 1: Estimated Attenuation -->
+              <div class="metric-box box-pink">
+                <div class="m-icon-wrap m-icon-pink">
+                  <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2v20M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"/></svg>
+                </div>
+                <div class="m-content">
+                  <span class="m-label">Estimated Attenuation</span>
+                  <span class="m-value text-cyan" id="metricAttenuation">-0.0 dB</span>
+                  <span class="m-sub">Broadband acoustic reduction</span>
+                </div>
+              </div>
+
+              <!-- Metric 2: SI-SNR Improvement -->
+              <div class="metric-box box-blue">
+                <div class="m-icon-wrap m-icon-blue">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+                </div>
+                <div class="m-content">
+                  <span class="m-label">SI-SNR Improvement</span>
+                  <span class="m-value text-green" id="metricSiSnr">+0.0 dB</span>
+                  <span class="m-sub">Scale-Invariant SNR gain</span>
+                </div>
+              </div>
+
+              <!-- Metric 3: STOI Intelligibility -->
+              <div class="metric-box box-purple">
+                <div class="m-icon-wrap m-icon-purple">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/></svg>
+                </div>
+                <div class="m-content">
+                  <span class="m-label">STOI Intelligibility</span>
+                  <span class="m-value text-blue" id="metricStoi">0.00 &rarr; 0.00</span>
+                  <span class="m-sub">Short-Time Objective Intelligibility</span>
+                </div>
+              </div>
+
+              <!-- Metric 4: Real-Time Ratio -->
+              <div class="metric-box box-amber">
+                <div class="m-icon-wrap m-icon-amber">
+                  <svg viewBox="0 0 24 24" fill="currentColor"><polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/></svg>
+                </div>
+                <div class="m-content">
+                  <span class="m-label">Real-Time Ratio</span>
+                  <span class="m-value text-amber" id="metricRtRatio">0.00x</span>
+                  <span class="m-sub">&lt; 1.0x required for live stream</span>
+                </div>
+              </div>
             </div>
 
-            <div class="metric-card">
-              <div class="metric-title">STOI INTELLIGIBILITY</div>
-              <div class="metric-value accent-blue" id="metricStoi">0.00 &rarr; 0.00</div>
-              <div class="metric-sub">Short-Time Objective Intelligibility</div>
-            </div>
-
-            <div class="metric-card">
-              <div class="metric-title">REAL-TIME RATIO</div>
-              <div class="metric-value accent-amber" id="metricRtRatio">0.00x</div>
-              <div class="metric-sub">&lt; 1.0x required for live stream</div>
-            </div>
-          </div>
-
-          <!-- Latency Breakdown Bar -->
-          <div class="latency-section">
-            <div class="latency-header">
-              <span>Cascaded Stage Latency Breakdown (vs 20 ms Budget)</span>
-              <span class="latency-total" id="latencyTotalVal">Total: 0.0 ms</span>
-            </div>
-            <div class="stacked-latency-bar">
-              <div class="seg seg-cap" id="segCap" style="width: 5%;" title="Audio Capture"></div>
-              <div class="seg seg-anc" id="segAnc" style="width: 10%;" title="FxNLMS ANC"></div>
-              <div class="seg seg-ai" id="segAi" style="width: 75%;" title="Neural Inference"></div>
-              <div class="seg seg-play" id="segPlay" style="width: 10%;" title="Playback / Output"></div>
-            </div>
-            <div class="latency-legend">
-              <span class="legend-item"><span class="legend-dot dot-cap"></span> Capture: <strong id="valLatCap">0.8ms</strong></span>
-              <span class="legend-item"><span class="legend-dot dot-anc"></span> FxNLMS: <strong id="valLatAnc">0.0ms</strong></span>
-              <span class="legend-item"><span class="legend-dot dot-ai"></span> Neural AI: <strong id="valLatAi">0.0ms</strong></span>
-              <span class="legend-item"><span class="legend-dot dot-play"></span> Playback: <strong id="valLatPlay">1.0ms</strong></span>
+            <!-- Latency Breakdown -->
+            <div class="latency-container">
+              <div class="latency-top">
+                <span class="latency-caption">Cascaded Stage Latency Breakdown (vs 20 ms Budget)</span>
+                <span class="latency-counter" id="latencyTotalVal">Total: 0.0 ms / 20.0 ms</span>
+              </div>
+              <div class="latency-bar-track">
+                <div class="bar-seg seg-cap" id="segCap" style="width: 5%;"></div>
+                <div class="bar-seg seg-anc" id="segAnc" style="width: 10%;"></div>
+                <div class="bar-seg seg-ai" id="segAi" style="width: 75%;"></div>
+                <div class="bar-seg seg-play" id="segPlay" style="width: 10%;"></div>
+              </div>
+              <div class="latency-legend-row">
+                <span class="leg-item"><span class="leg-dot dot-cyan"></span> Capture: <strong id="valLatCap">0.8 ms</strong></span>
+                <span class="leg-item"><span class="leg-dot dot-amber"></span> FxNLMS: <strong id="valLatAnc">0.0 ms</strong></span>
+                <span class="leg-item"><span class="leg-dot dot-green"></span> Neural AI: <strong id="valLatAi">0.0 ms</strong></span>
+                <span class="leg-item"><span class="leg-dot dot-purple"></span> Playback: <strong id="valLatPlay">1.0 ms</strong></span>
+              </div>
             </div>
           </div>
         </div>
-      </section>
-    </main>
+      </div>
+    </div>
+  </div>
+
+  <!-- 3. AUDIO & SOURCE DRAWER / MODAL -->
+  <div class="modal-backdrop" id="sourceModal" onclick="closeSourceModal(event)">
+    <div class="modal-dialog" onclick="event.stopPropagation()">
+      <div class="modal-head">
+        <div class="modal-title-wrap">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 1a3 3 0 0 0-3 3v8a3 3 0 0 0 6 0V4a3 3 0 0 0-3-3z"/><path d="M19 10v2a7 7 0 0 1-14 0v-2"/><line x1="12" y1="19" x2="12" y2="23"/><line x1="8" y1="23" x2="16" y2="23"/></svg>
+          <h3>Select Audio Input Source</h3>
+        </div>
+        <button type="button" class="modal-close-btn" onclick="closeSourceModal()">&times;</button>
+      </div>
+
+      <!-- Source Tabs -->
+      <div class="modal-tabs">
+        <button type="button" class="modal-tab-btn active" id="tabPresetBtn" onclick="switchSourceTab('preset')">Preset Library (36 Scenarios)</button>
+        <button type="button" class="modal-tab-btn" id="tabUploadBtn" onclick="switchSourceTab('upload')">File Upload (WAV/MP3)</button>
+        <button type="button" class="modal-tab-btn" id="tabMicBtn" onclick="switchSourceTab('mic')">Live Microphone</button>
+      </div>
+
+      <!-- Tab Content: Presets -->
+      <div class="tab-pane active" id="tabPresetContent">
+        <div class="form-group">
+          <label for="presetSelect">Select Defence Noise Scenario</label>
+          <select id="presetSelect" class="form-select" onchange="onPresetSelected()">
+            <option value="" disabled selected>Loading curated presets...</option>
+          </select>
+        </div>
+        <div class="scenario-callout" id="presetInfoBox">
+          <span class="callout-label">Scenario Context:</span>
+          <span id="presetDetailsText">Select a noisy defence audio sample above to evaluate.</span>
+        </div>
+      </div>
+
+      <!-- Tab Content: Upload -->
+      <div class="tab-pane" id="tabUploadContent">
+        <div class="dropzone-box" id="fileDropzone" onclick="document.getElementById('audioFileInput').click()">
+          <input type="file" id="audioFileInput" accept=".wav,.mp3,.flac,.ogg" style="display:none" onchange="handleFileSelected(event)">
+          <svg class="drop-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+          <p class="drop-text">Click or Drag &amp; Drop Audio File</p>
+          <p class="drop-hint">Supports WAV, MP3, FLAC, OGG (auto-resampled to 16 kHz)</p>
+        </div>
+        <div class="file-badge-bar" id="fileLoadedBanner" style="display:none">
+          <span id="loadedFileName">filename.wav</span>
+          <span id="loadedFileSize">0 KB</span>
+        </div>
+      </div>
+
+      <!-- Tab Content: Live Mic -->
+      <div class="tab-pane" id="tabMicContent">
+        <div class="mic-panel">
+          <canvas id="micOscilloscopeCanvas" width="460" height="90"></canvas>
+          <div class="mic-timer" id="recordTimer">00:00.0</div>
+          <button type="button" class="btn-rec" id="micRecordBtn" onclick="toggleMicRecording()">
+            <span class="rec-pulse"></span>
+            <span id="micRecordBtnText">Start Recording</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="modal-actions">
+        <button type="button" class="btn-modal-done" onclick="closeSourceModal()">Apply &amp; Close</button>
+      </div>
+      <!-- Hidden legacy source badge to preserve JS compatibility -->
+      <span id="selectedSourceBadge" style="display:none">PRESET</span>
+    </div>
   </div>
 
   <script src="/static/app.js"></script>

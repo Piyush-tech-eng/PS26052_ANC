@@ -33,6 +33,8 @@ class FrameANCConfig:
     step_size: float = 0.01
     epsilon: float = 1e-6
     algorithm: str = "fxnlms"  # "fxlms", "fxnlms", "lms", "nlms", "none"
+    leakage: float = 0.0
+    max_weight_norm: float | None = None
 
     def __post_init__(self) -> None:
         if self.filter_length <= 0:
@@ -41,6 +43,10 @@ class FrameANCConfig:
             raise ValueError("step_size must be positive.")
         if self.algorithm not in {"fxlms", "fxnlms", "lms", "nlms", "none"}:
             raise ValueError(f"Unsupported algorithm: {self.algorithm}")
+        if self.leakage < 0.0 or self.leakage >= 1.0:
+            raise ValueError("leakage must be in [0.0, 1.0).")
+        if self.max_weight_norm is not None and self.max_weight_norm <= 0.0:
+            raise ValueError("max_weight_norm must be positive.")
 
 
 class FrameANC:
@@ -143,6 +149,9 @@ class FrameANC:
         self._filtered_ref_state[0] = x_filtered
 
         # Adaptation
+        if cfg.algorithm != "none" and cfg.leakage > 0.0:
+            self._coefficients *= (1.0 - cfg.leakage)
+
         if cfg.algorithm == "none":
             pass
         elif cfg.algorithm == "lms":
@@ -197,6 +206,11 @@ class FrameANC:
         residual = np.empty(len(ref), dtype=np.float64)
         for i in range(len(ref)):
             residual[i] = self.process_sample(float(ref[i]), float(meas[i]))
+
+        if self._config.max_weight_norm is not None:
+            w_norm = float(np.linalg.norm(self._coefficients))
+            if w_norm > self._config.max_weight_norm:
+                self._coefficients *= (self._config.max_weight_norm / (w_norm + 1e-12))
 
         return residual
 
