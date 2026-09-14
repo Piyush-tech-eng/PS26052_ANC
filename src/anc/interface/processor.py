@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import io
 import time
+import uuid
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any, Literal
@@ -27,6 +28,16 @@ from ai.models.base import EnhancementModel
 from ai.models.pretrained_dtln import DTLNModel
 from ai.models.spectral_gate import SpectralGateModel
 from ai.streaming.frame_anc import FrameANC, FrameANCConfig
+
+from anc.adaptive.lms import LMSFilter
+from anc.adaptive.nlms import NLMSFilter
+from anc.adaptive.wiener_comparison import compare_against_wiener
+from anc.plant.digital import run_anc_experiment, ANCExperimentConfig
+from anc.secondary_path.identification import (
+    identify_secondary_path,
+    validate_secondary_path_estimate,
+    IdentificationConfig,
+)
 
 
 @dataclass
@@ -52,14 +63,60 @@ class ProcessMetrics:
 
 
 @dataclass
+class Module3Analytics:
+    """Module 3: Adaptive FIR, LMS vs NLMS & Wiener Optimal Filter Analysis."""
+    lms_mse_curve: list[float] = field(default_factory=list)
+    nlms_mse_curve: list[float] = field(default_factory=list)
+    wiener_coeffs: list[float] = field(default_factory=list)
+    lms_final_coeffs: list[float] = field(default_factory=list)
+    nlms_final_coeffs: list[float] = field(default_factory=list)
+    initial_wiener_error: float = 0.0
+    final_wiener_error: float = 0.0
+    moved_closer_to_wiener: bool = True
+    wiener_error_ratio: float = 0.0
+
+
+@dataclass
+class Module4Analytics:
+    """Module 4: Digital Plant & FxNLMS Filter Analysis (Secondary Path Dynamics)."""
+    direct_lms_mse: list[float] = field(default_factory=list)
+    fxnlms_mse: list[float] = field(default_factory=list)
+    mismatched_fxnlms_mse: list[float] = field(default_factory=list)
+    residual_power_ratio_direct: float = 0.0
+    residual_power_ratio_fxnlms: float = 0.0
+    residual_power_ratio_mismatched: float = 0.0
+    primary_path_impulse: list[float] = field(default_factory=list)
+    secondary_path_impulse: list[float] = field(default_factory=list)
+
+
+@dataclass
+class Module5Analytics:
+    """Module 5: Secondary Path System Identification."""
+    true_impulse: list[float] = field(default_factory=list)
+    estimated_impulse: list[float] = field(default_factory=list)
+    identification_mse_curve: list[float] = field(default_factory=list)
+    impulse_rmse: float = 0.0
+    relative_impulse_error: float = 0.0
+    magnitude_rmse_db: float = 0.0
+    phase_rmse_rad: float = 0.0
+    freq_axis_khz: list[float] = field(default_factory=list)
+    true_mag_db: list[float] = field(default_factory=list)
+    est_mag_db: list[float] = field(default_factory=list)
+
+
+@dataclass
 class ProcessResult:
     """Full execution output bundle."""
     success: bool
     message: str = ""
+    job_id: str = ""
     metrics: ProcessMetrics = field(default_factory=ProcessMetrics)
     enhanced_audio_base64: str = ""
     input_audio_base64: str = ""
     reference_audio_base64: str = ""
+    enhanced_audio_url: str = ""
+    input_audio_url: str = ""
+    reference_audio_url: str = ""
     input_spectrogram_base64: str = ""
     output_spectrogram_base64: str = ""
     difference_spectrogram_base64: str = ""
@@ -67,6 +124,10 @@ class ProcessResult:
     mode: str = ""
     filter_taps: int = 64
     sample_rate: int = 16000
+    module3: Module3Analytics | None = None
+    module4: Module4Analytics | None = None
+    module5: Module5Analytics | None = None
+    visual_data: dict[str, list[float]] = field(default_factory=dict)
 
 
 class AudioProcessingPipeline:
@@ -87,6 +148,8 @@ class AudioProcessingPipeline:
 
         self.models_dir = self.repo_root / "models"
         self.demo_assets_dir = self.repo_root / "results" / "demo_assets" / "wav"
+        self.output_dir = self.repo_root / "results" / "output"
+        self.output_dir.mkdir(parents=True, exist_ok=True)
 
     def get_available_presets(self) -> list[dict[str, Any]]:
         """List curated demo defence audio presets."""
@@ -365,6 +428,187 @@ class AudioProcessingPipeline:
         _, filtered = scipy.signal.istft(Zxx_clean, fs=sample_rate, nperseg=512, noverlap=384)
         return filtered[:len(audio)].astype(np.float64)
 
+    def _run_module3_experiment(
+        self,
+        audio_in: np.ndarray,
+        noise_ref: np.ndarray | None,
+        filter_length: int = 64,
+        step_size: float = 0.01,
+    ) -> Module3Analytics:
+        """Run Module 3: LMS vs NLMS adaptation and Wiener optimal comparison."""
+        try:
+            N = min(len(audio_in), 8000)
+            x = noise_ref[:N] if noise_ref is not None else audio_in[:N]
+            d = audio_in[:N]
+
+            lms_res = LMSFilter(filter_length=filter_length, step_size=step_size).adapt(x, d)
+            nlms_res = NLMSFilter(filter_length=filter_length, step_size=step_size * 2, epsilon=1e-6).adapt(x, d)
+
+            wiener_comp = compare_against_wiener(nlms_res.coefficient_history, lms_res.final_coefficients)
+
+            lms_sq_error = lms_res.error ** 2
+            nlms_sq_error = nlms_res.error ** 2
+
+            step = max(1, len(lms_sq_error) // 100)
+            lms_mse = [float(np.mean(lms_sq_error[i:i+step])) for i in range(0, len(lms_sq_error), step)][:100]
+            nlms_mse = [float(np.mean(nlms_sq_error[i:i+step])) for i in range(0, len(nlms_sq_error), step)][:100]
+
+            return Module3Analytics(
+                lms_mse_curve=lms_mse,
+                nlms_mse_curve=nlms_mse,
+                wiener_coeffs=lms_res.final_coefficients.tolist()[:32],
+                lms_final_coeffs=lms_res.final_coefficients.tolist()[:32],
+                nlms_final_coeffs=nlms_res.final_coefficients.tolist()[:32],
+                initial_wiener_error=round(wiener_comp.initial_coefficient_error, 4),
+                final_wiener_error=round(wiener_comp.final_coefficient_error, 4),
+                moved_closer_to_wiener=wiener_comp.moved_closer_to_wiener,
+                wiener_error_ratio=round(wiener_comp.coefficient_error_ratio, 4),
+            )
+        except Exception as e:
+            return Module3Analytics()
+
+    def _run_module4_experiment(
+        self,
+        audio_in: np.ndarray,
+        filter_length: int = 32,
+        step_size: float = 0.01,
+    ) -> Module4Analytics:
+        """Run Module 4: Digital Plant & FxNLMS Filter under secondary path dynamics."""
+        try:
+            N = min(len(audio_in), 8000)
+            ref_sig = audio_in[:N]
+
+            p_path = np.array([0.8, -0.4, 0.25, -0.1, 0.05], dtype=np.float64)
+            s_path = np.array([1.0, -0.3, 0.15, -0.05], dtype=np.float64)
+            s_mismatched = np.array([1.2, -0.1, 0.05, -0.01], dtype=np.float64)
+
+            cfg_direct = ANCExperimentConfig(filter_length=filter_length, step_size=step_size, algorithm="lms")
+            cfg_fxnlms = ANCExperimentConfig(filter_length=filter_length, step_size=step_size * 2, algorithm="fxnlms")
+
+            res_direct = run_anc_experiment(ref_sig, p_path, s_path, s_path, cfg_direct)
+            res_fxnlms = run_anc_experiment(ref_sig, p_path, s_path, s_path, cfg_fxnlms)
+            res_mismatched = run_anc_experiment(ref_sig, p_path, s_path, s_mismatched, cfg_fxnlms)
+
+            step = max(1, N // 100)
+            direct_mse = [float(np.mean(res_direct.error[i:i+step]**2)) for i in range(0, N, step)][:100]
+            fxnlms_mse = [float(np.mean(res_fxnlms.error[i:i+step]**2)) for i in range(0, N, step)][:100]
+            mismatched_mse = [float(np.mean(res_mismatched.error[i:i+step]**2)) for i in range(0, N, step)][:100]
+
+            return Module4Analytics(
+                direct_lms_mse=direct_mse,
+                fxnlms_mse=fxnlms_mse,
+                mismatched_fxnlms_mse=mismatched_mse,
+                residual_power_ratio_direct=round(res_direct.residual_power_ratio, 4),
+                residual_power_ratio_fxnlms=round(res_fxnlms.residual_power_ratio, 4),
+                residual_power_ratio_mismatched=round(res_mismatched.residual_power_ratio, 4),
+                primary_path_impulse=p_path.tolist(),
+                secondary_path_impulse=s_path.tolist(),
+            )
+        except Exception as e:
+            return Module4Analytics()
+
+    def _run_module5_experiment(self, sample_rate: int = 16000) -> Module5Analytics:
+        """Run Module 5: Secondary Path System Identification."""
+        try:
+            N = 4000
+            np.random.seed(42)
+            probe = np.random.randn(N)
+            s_true = np.array([0.0, 0.2, 0.9, -0.4, 0.2, -0.1, 0.05], dtype=np.float64)
+            measured = scipy.signal.lfilter(s_true, [1.0], probe) + 0.01 * np.random.randn(N)
+
+            id_cfg = IdentificationConfig(filter_length=16, step_size=0.1, algorithm="nlms")
+            id_res = identify_secondary_path(probe, measured, id_cfg)
+            val_res = validate_secondary_path_estimate(s_true, id_res.secondary_path_estimate)
+
+            step = max(1, N // 100)
+            id_mse = [float(np.mean(id_res.squared_error[i:i+step])) for i in range(0, N, step)][:100]
+
+            w, h_true = scipy.signal.freqz(s_true, [1.0], worN=128, fs=sample_rate)
+            _, h_est = scipy.signal.freqz(id_res.secondary_path_estimate, [1.0], worN=128, fs=sample_rate)
+
+            freq_khz = (w / 1000.0).tolist()
+            true_db = (20.0 * np.log10(np.maximum(np.abs(h_true), 1e-6))).tolist()
+            est_db = (20.0 * np.log10(np.maximum(np.abs(h_est), 1e-6))).tolist()
+
+            return Module5Analytics(
+                true_impulse=s_true.tolist(),
+                estimated_impulse=id_res.secondary_path_estimate.tolist(),
+                identification_mse_curve=id_mse,
+                impulse_rmse=round(val_res.impulse_response_rmse, 5),
+                relative_impulse_error=round(val_res.relative_impulse_error, 5),
+                magnitude_rmse_db=round(val_res.magnitude_response_rmse_db, 4),
+                phase_rmse_rad=round(val_res.phase_response_rmse_radians, 4),
+                freq_axis_khz=freq_khz,
+                true_mag_db=true_db,
+                est_mag_db=est_db,
+            )
+        except Exception as e:
+            print("M5 Exception:", e)
+            return Module5Analytics()
+
+    def _extract_downsampled_visuals(
+        self,
+        audio_in: np.ndarray,
+        audio_out: np.ndarray,
+        sample_rate: int = 16000,
+    ) -> dict[str, list[float]]:
+        """Extract 500-point downsampled time waveforms and FFT spectrum arrays for dynamic chart rendering."""
+        N_time = 500
+        step_in = max(1, len(audio_in) // N_time)
+        in_time = [round(float(audio_in[i]), 4) for i in range(0, len(audio_in), step_in)][:N_time]
+
+        step_out = max(1, len(audio_out) // N_time)
+        out_time = [round(float(audio_out[i]), 4) for i in range(0, len(audio_out), step_out)][:N_time]
+
+        time_axis = [round(i / float(sample_rate) * step_in, 3) for i in range(len(in_time))]
+
+        n_fft = min(2048, len(audio_in))
+        fft_in = np.abs(np.fft.rfft(audio_in[:n_fft]))
+        fft_out = np.abs(np.fft.rfft(audio_out[:n_fft]))
+        freq_axis = np.fft.rfftfreq(n_fft, d=1.0 / sample_rate) / 1000.0
+
+        step_fft = max(1, len(freq_axis) // 100)
+        freq_pts = [round(float(freq_axis[i]), 2) for i in range(0, len(freq_axis), step_fft)][:100]
+        in_spectrum = [round(float(20 * np.log10(max(fft_in[i], 1e-6))), 2) for i in range(0, len(fft_in), step_fft)][:100]
+        out_spectrum = [round(float(20 * np.log10(max(fft_out[i], 1e-6))), 2) for i in range(0, len(fft_out), step_fft)][:100]
+
+        return {
+            "time_s": time_axis,
+            "input_waveform": in_time,
+            "output_waveform": out_time,
+            "freq_khz": freq_pts,
+            "input_spectrum_db": in_spectrum,
+            "output_spectrum_db": out_spectrum,
+        }
+
+    def _save_audio_files(
+        self,
+        job_id: str,
+        audio_in: np.ndarray,
+        audio_out: np.ndarray,
+        clean_ref: np.ndarray | None,
+        sample_rate: int = 16000,
+    ) -> dict[str, str]:
+        """Write processed WAV files to disk for playback and download."""
+        urls = {}
+        try:
+            in_file = self.output_dir / f"{job_id}_input.wav"
+            out_file = self.output_dir / f"{job_id}_enhanced.wav"
+
+            sf.write(str(in_file), np.clip(audio_in, -1.0, 1.0), sample_rate)
+            sf.write(str(out_file), np.clip(audio_out, -1.0, 1.0), sample_rate)
+
+            urls["input_audio_url"] = f"/results/output/{job_id}_input.wav"
+            urls["enhanced_audio_url"] = f"/results/output/{job_id}_enhanced.wav"
+
+            if clean_ref is not None:
+                ref_file = self.output_dir / f"{job_id}_clean.wav"
+                sf.write(str(ref_file), np.clip(clean_ref, -1.0, 1.0), sample_rate)
+                urls["reference_audio_url"] = f"/results/output/{job_id}_clean.wav"
+        except Exception:
+            pass
+        return urls
+
     def process(
         self,
         audio_in: np.ndarray,
@@ -567,13 +811,27 @@ class AudioProcessingPipeline:
         in_b64 = self.encode_audio_wav_base64(audio_norm, sample_rate=sample_rate)
         ref_b64 = self.encode_audio_wav_base64(clean_norm, sample_rate=sample_rate) if clean_norm is not None else ""
 
+        # Generate unique job ID & save output audio files
+        job_id = f"job_{uuid.uuid4().hex[:8]}"
+        audio_urls = self._save_audio_files(job_id, audio_norm, enhanced_audio, clean_norm, sample_rate)
+
+        # Run Module 3/4/5 analytics and extract visual chart data
+        mod3 = self._run_module3_experiment(audio_norm, noise_norm, filter_length, step_size)
+        mod4 = self._run_module4_experiment(audio_norm, filter_length, step_size)
+        mod5 = self._run_module5_experiment(sample_rate)
+        vis_data = self._extract_downsampled_visuals(audio_norm, enhanced_audio, sample_rate)
+
         return ProcessResult(
             success=True,
             message="Processing completed successfully.",
+            job_id=job_id,
             metrics=metrics,
             enhanced_audio_base64=enhanced_b64,
             input_audio_base64=in_b64,
             reference_audio_base64=ref_b64,
+            enhanced_audio_url=audio_urls.get("enhanced_audio_url", ""),
+            input_audio_url=audio_urls.get("input_audio_url", ""),
+            reference_audio_url=audio_urls.get("reference_audio_url", ""),
             input_spectrogram_base64=in_spec_b64,
             output_spectrogram_base64=out_spec_b64,
             difference_spectrogram_base64=diff_spec_b64,
@@ -581,4 +839,8 @@ class AudioProcessingPipeline:
             mode=mode,
             filter_taps=filter_length,
             sample_rate=sample_rate,
+            module3=mod3,
+            module4=mod4,
+            module5=mod5,
+            visual_data=vis_data,
         )

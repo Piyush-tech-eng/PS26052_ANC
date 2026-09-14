@@ -1,153 +1,151 @@
 /**
- * PS26052 ANC Unified Interface Frontend Controller
- * Handles audio uploads, in-browser live microphone recording,
- * REST API communications, spectrogram rendering, and audio playback.
+ * PS26052 ANC Tactical Command Center & DSP Analytics Dashboard
  */
 
-// Application State
-let currentSourceType = 'preset'; // 'preset' | 'upload' | 'mic'
-let availablePresets = [];
-let uploadedAudioBase64 = null;
-let recordedAudioBase64 = null;
-let lastProcessResult = null;
+let currentSourceTab = 'preset';
+let selectedPresetId = null;
+let uploadedFileBytesB64 = null;
+let uploadedFileName = null;
+let micMediaRecorder = null;
+let micAudioChunks = [];
+let micRecordingB64 = null;
+let micTimerInterval = null;
 
-// Microphone Recording State
-let mediaStream = null;
-let audioContext = null;
-let audioInputNode = null;
-let analyserNode = null;
-let recorderNode = null;
-let isRecording = false;
-let recordStartTime = 0;
-let recordTimerInterval = null;
-let recordedBuffers = [];
-let recordedLength = 0;
-let animFrameId = null;
+let isPlayingClean = false;
+let chartInstances = {};
 
-// Audio A/B State
-let activeABChannel = 'output'; // 'input' | 'output'
-
+// On Page Load
 document.addEventListener('DOMContentLoaded', () => {
-  initApp();
+  initTheme();
+  fetchHardwareInfo();
+  fetchPresets();
 });
 
-async function initApp() {
-  await Promise.all([loadHardwareStatus(), loadPresets()]);
+// Theme Management
+function initTheme() {
+  const savedTheme = localStorage.getItem('ps26052_theme');
+  if (savedTheme === 'light') {
+    document.body.classList.add('light-theme');
+    updateThemeUI(true);
+  } else {
+    document.body.classList.remove('light-theme');
+    updateThemeUI(false);
+  }
 }
 
-/**
- * Fetch hardware and available models status
- */
-async function loadHardwareStatus() {
+function toggleTheme() {
+  const isLight = document.body.classList.toggle('light-theme');
+  localStorage.setItem('ps26052_theme', isLight ? 'light' : 'dark');
+  updateThemeUI(isLight);
+  updateChartColors();
+}
+
+function updateThemeUI(isLight) {
+  const label = document.getElementById('themeToggleLabel');
+  const sunIcon = document.querySelector('.sun-icon');
+  const moonIcon = document.querySelector('.moon-icon');
+
+  if (label) label.textContent = isLight ? 'ENGINEERING LIGHT' : 'MILITARY HUD';
+  if (sunIcon) sunIcon.style.display = isLight ? 'none' : 'inline';
+  if (moonIcon) moonIcon.style.display = isLight ? 'inline' : 'none';
+}
+
+// Source Tab Switching
+function switchSourceTab(tab) {
+  currentSourceTab = tab;
+  ['preset', 'upload', 'mic'].forEach(t => {
+    const btn = document.getElementById(`tab${t.charAt(0).toUpperCase() + t.slice(1)}Btn`);
+    const content = document.getElementById(`tab${t.charAt(0).toUpperCase() + t.slice(1)}Content`);
+    if (btn) btn.classList.toggle('active', t === tab);
+    if (content) content.classList.toggle('active', t === tab);
+  });
+
+  const sourceBadge = document.getElementById('selectedSourceBadge');
+  if (sourceBadge) {
+    sourceBadge.textContent = tab.toUpperCase();
+  }
+}
+
+// Analytics Navigation Tab Switching
+function switchAnalyticsTab(tabName) {
+  ['overview', 'mod3', 'mod4', 'mod5', 'visuals'].forEach(t => {
+    const btn = document.getElementById(`tabNav${t.charAt(0).toUpperCase() + t.slice(1)}`);
+    const pane = document.getElementById(`pane${t.charAt(0).toUpperCase() + t.slice(1)}`);
+    if (btn) btn.classList.toggle('active', t === tabName);
+    if (pane) pane.style.display = (t === tabName) ? 'flex' : 'none';
+  });
+
+  // Resize active Chart.js charts
+  Object.values(chartInstances).forEach(chart => {
+    if (chart) chart.resize();
+  });
+}
+
+// Hardware Telemetry API
+async function fetchHardwareInfo() {
   try {
     const res = await fetch('/api/hardware');
     const data = await res.json();
-
     const platBadge = document.getElementById('platformBadge');
     if (platBadge && data.os) {
-      platBadge.textContent = `${data.os}`;
-    }
-
-    if (data.recommended_model) {
-      const modelSelect = document.getElementById('modelSelect');
-      if (modelSelect && data.models[data.recommended_model]) {
-        modelSelect.value = data.recommended_model;
-      }
+      platBadge.textContent = `${data.os} (Python ${data.python})`;
     }
   } catch (err) {
-    console.warn('Hardware status load error:', err);
+    console.error('Failed to fetch hardware info:', err);
   }
 }
 
-/**
- * Fetch preset defence audio scenarios
- */
-async function loadPresets() {
-  const select = document.getElementById('presetSelect');
+// Presets API
+async function fetchPresets() {
   try {
     const res = await fetch('/api/presets');
     const data = await res.json();
-    availablePresets = data.presets || [];
+    const select = document.getElementById('presetSelect');
+    if (!select || !data.presets) return;
 
-    select.innerHTML = '';
-    if (availablePresets.length === 0) {
-      select.innerHTML = '<option value="" disabled>No preset audio assets found</option>';
-      return;
-    }
-
-    availablePresets.forEach((preset, index) => {
+    select.innerHTML = '<option value="" disabled selected>Select a defence scenario...</option>';
+    data.presets.forEach(p => {
       const opt = document.createElement('option');
-      opt.value = preset.id;
-      opt.textContent = preset.name;
-      if (index === 0) opt.selected = true;
+      opt.value = p.id;
+      opt.textContent = p.name;
       select.appendChild(opt);
     });
 
-    onPresetSelected();
+    if (data.presets.length > 0) {
+      select.value = data.presets[0].id;
+      onPresetSelected();
+    }
   } catch (err) {
-    select.innerHTML = '<option value="" disabled>Error loading presets</option>';
-    console.error('Preset loading failed:', err);
+    console.error('Failed to fetch presets:', err);
   }
 }
 
-/**
- * Switch Audio Input Source Tabs
- */
-function switchSourceTab(type) {
-  currentSourceType = type;
-
-  document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
-  document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
-
-  const badge = document.getElementById('selectedSourceBadge');
-
-  if (type === 'preset') {
-    document.getElementById('tabPresetBtn').classList.add('active');
-    document.getElementById('tabPresetContent').classList.add('active');
-    badge.textContent = 'PRESET';
-    badge.className = 'badge badge-cyan';
-  } else if (type === 'upload') {
-    document.getElementById('tabUploadBtn').classList.add('active');
-    document.getElementById('tabUploadContent').classList.add('active');
-    badge.textContent = 'FILE UPLOAD';
-    badge.className = 'badge badge-cyan';
-  } else if (type === 'mic') {
-    document.getElementById('tabMicBtn').classList.add('active');
-    document.getElementById('tabMicContent').classList.add('active');
-    badge.textContent = 'LIVE MIC';
-    badge.className = 'badge badge-emerald';
-    setupOscilloscopeIdle();
-  }
-}
-
-/**
- * Preset selection change
- */
 function onPresetSelected() {
   const select = document.getElementById('presetSelect');
-  const selectedId = select.value;
-  const preset = availablePresets.find(p => p.id === selectedId);
+  selectedPresetId = select ? select.value : null;
 
-  const infoText = document.getElementById('presetDetailsText');
-  if (preset && infoText) {
-    const refTag = preset.has_clean_reference ? 'Ground-Truth Clean Speech Reference available (SI-SNR & STOI will be evaluated).' : 'Mono Noisy Sample.';
-    infoText.textContent = `Acoustic Scenario: ${preset.category.toUpperCase()} noise at ${preset.snr}. ${refTag}`;
+  const infoBox = document.getElementById('presetDetailsText');
+  if (infoBox && selectedPresetId) {
+    infoBox.textContent = `Preset '${selectedPresetId}' selected. Dual-channel reference audio prepared.`;
   }
 }
 
-/**
- * Drag & Drop / File Input Handler
- */
-function handleFileSelected(e) {
-  const file = e.target.files[0];
+// File Upload Handling
+function handleFileSelected(event) {
+  const file = event.target.files[0];
   if (!file) return;
 
+  uploadedFileName = file.name;
   const reader = new FileReader();
-  reader.onload = (event) => {
-    uploadedAudioBase64 = event.target.result;
-    document.getElementById('loadedFileName').textContent = file.name;
-    document.getElementById('loadedFileSize').textContent = `${(file.size / 1024).toFixed(1)} KB`;
-    document.getElementById('fileLoadedBanner').style.display = 'flex';
+  reader.onload = (e) => {
+    uploadedFileBytesB64 = e.target.result;
+    const banner = document.getElementById('fileLoadedBanner');
+    const nameSpan = document.getElementById('loadedFileName');
+    const sizeSpan = document.getElementById('loadedFileSize');
+
+    if (nameSpan) nameSpan.textContent = file.name;
+    if (sizeSpan) sizeSpan.textContent = `${(file.size / 1024).toFixed(1)} KB`;
+    if (banner) banner.style.display = 'flex';
   };
   reader.readAsDataURL(file);
 }
@@ -155,293 +153,131 @@ function handleFileSelected(e) {
 // Drag & Drop Setup
 const dropzone = document.getElementById('fileDropzone');
 if (dropzone) {
-  ['dragenter', 'dragover'].forEach(eventName => {
-    dropzone.addEventListener(eventName, (e) => {
-      e.preventDefault();
-      dropzone.style.borderColor = '#38bdf8';
-    }, false);
+  ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(eventName => {
+    dropzone.addEventListener(eventName, e => e.preventDefault(), false);
   });
 
-  ['dragleave', 'drop'].forEach(eventName => {
-    dropzone.addEventListener(eventName, (e) => {
-      e.preventDefault();
-      dropzone.style.borderColor = 'rgba(56, 189, 248, 0.3)';
-    }, false);
-  });
-
-  dropzone.addEventListener('drop', (e) => {
-    const dt = e.dataTransfer;
-    const file = dt.files[0];
-    if (file) {
-      const input = document.getElementById('audioFileInput');
-      input.files = dt.files;
-      handleFileSelected({ target: { files: [file] } });
+  dropzone.addEventListener('drop', e => {
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+      document.getElementById('audioFileInput').files = files;
+      handleFileSelected({ target: { files } });
     }
   });
 }
 
-/**
- * Mode Switching (Hybrid, AI-only, Classical-only)
- */
-function onModeChanged() {
-  const mode = document.getElementById('pipelineModeSelect').value;
-  const modelGroup = document.getElementById('modelSelectGroup');
-  const filterGroup = document.getElementById('filterTapsGroup');
-  const stepGroup = document.getElementById('stepSizeGroup');
-
-  if (mode === 'ai_only') {
-    modelGroup.style.display = 'flex';
-    filterGroup.style.display = 'none';
-    stepGroup.style.display = 'none';
-  } else if (mode === 'anc_only') {
-    modelGroup.style.display = 'none';
-    filterGroup.style.display = 'flex';
-    stepGroup.style.display = 'flex';
-  } else {
-    // Hybrid
-    modelGroup.style.display = 'flex';
-    filterGroup.style.display = 'flex';
-    stepGroup.style.display = 'flex';
-  }
-}
-
-/**
- * Microphone Oscilloscope Idle Display
- */
-function setupOscilloscopeIdle() {
-  const canvas = document.getElementById('micOscilloscopeCanvas');
-  if (!canvas) return;
-  const ctx = canvas.getContext('2d');
-  ctx.fillStyle = '#03060f';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  ctx.strokeStyle = '#1e293b';
-  ctx.lineWidth = 1;
-  ctx.beginPath();
-  ctx.moveTo(0, canvas.height / 2);
-  ctx.lineTo(canvas.width, canvas.height / 2);
-  ctx.stroke();
-}
-
-/**
- * Live Browser Microphone Recording
- */
+// Live Mic Recording
 async function toggleMicRecording() {
   const btn = document.getElementById('micRecordBtn');
   const btnText = document.getElementById('micRecordBtnText');
   const timer = document.getElementById('recordTimer');
 
-  if (!isRecording) {
-    // Start Recording
-    try {
-      mediaStream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: false, noiseSuppression: false, autoGainControl: false } });
-    } catch (err) {
-      alert(`Could not access microphone: ${err.message}. Please allow microphone permissions.`);
-      return;
-    }
-
-    audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
-    audioInputNode = audioContext.createMediaStreamSource(mediaStream);
-    analyserNode = audioContext.createAnalyser();
-    analyserNode.fftSize = 512;
-
-    // Buffer collection node
-    const bufferSize = 4096;
-    recorderNode = audioContext.createScriptProcessor(bufferSize, 1, 1);
-    recordedBuffers = [];
-    recordedLength = 0;
-
-    recorderNode.onaudioprocess = (e) => {
-      if (!isRecording) return;
-      const inputBuffer = e.inputBuffer.getChannelData(0);
-      recordedBuffers.push(new Float32Array(inputBuffer));
-      recordedLength += inputBuffer.length;
-    };
-
-    audioInputNode.connect(analyserNode);
-    audioInputNode.connect(recorderNode);
-    recorderNode.connect(audioContext.destination);
-
-    isRecording = true;
-    recordStartTime = Date.now();
-    btn.classList.add('recording');
-    btnText.textContent = 'Stop & Process Audio';
-
-    // Start Timer
-    recordTimerInterval = setInterval(() => {
-      const elapsedMs = Date.now() - recordStartTime;
-      const secs = Math.floor(elapsedMs / 1000);
-      const dec = Math.floor((elapsedMs % 1000) / 100);
-      const mm = String(Math.floor(secs / 60)).padStart(2, '0');
-      const ss = String(secs % 60).padStart(2, '0');
-      timer.textContent = `${mm}:${ss}.${dec}`;
-    }, 100);
-
-    // Start Waveform Visualizer
-    drawOscilloscope();
-
-  } else {
-    // Stop Recording
-    isRecording = false;
-    clearInterval(recordTimerInterval);
-    cancelAnimationFrame(animFrameId);
-
-    btn.classList.remove('recording');
+  if (micMediaRecorder && micMediaRecorder.state === 'recording') {
+    micMediaRecorder.stop();
     btnText.textContent = 'Start Recording';
+    btn.classList.remove('recording');
+    clearInterval(micTimerInterval);
+  } else {
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+      micMediaRecorder = new MediaRecorder(stream);
+      micAudioChunks = [];
 
-    if (mediaStream) {
-      mediaStream.getTracks().forEach(t => t.stop());
+      micMediaRecorder.ondataavailable = e => micAudioChunks.push(e.data);
+      micMediaRecorder.onstop = async () => {
+        const audioBlob = new Blob(micAudioChunks, { type: 'audio/wav' });
+        const reader = new FileReader();
+        reader.onload = e => {
+          micRecordingB64 = e.target.result;
+          if (timer) timer.textContent = 'REC DONE';
+        };
+        reader.readAsDataURL(audioBlob);
+      };
+
+      micMediaRecorder.start();
+      btnText.textContent = 'Stop Recording';
+      btn.classList.add('recording');
+
+      let seconds = 0;
+      micTimerInterval = setInterval(() => {
+        seconds += 0.1;
+        if (timer) timer.textContent = `00:0${seconds.toFixed(1)}s`;
+      }, 100);
+
+    } catch (err) {
+      alert('Microphone access denied or unavailable: ' + err.message);
     }
-    if (audioContext && audioContext.state !== 'closed') {
-      audioContext.close();
-    }
-
-    // Merge Float32Array buffers and encode to standard 16-bit PCM WAV
-    const merged = new Float32Array(recordedLength);
-    let offset = 0;
-    for (let i = 0; i < recordedBuffers.length; i++) {
-      merged.set(recordedBuffers[i], offset);
-      offset += recordedBuffers[i].length;
-    }
-
-    recordedAudioBase64 = encodeWAV(merged, 16000);
-    timer.textContent = 'Ready to Process';
-
-    // Automatically trigger processing pipeline
-    runProcessingPipeline();
   }
 }
 
-/**
- * Draw animated oscilloscope from live microphone
- */
-function drawOscilloscope() {
-  if (!isRecording) return;
-  animFrameId = requestAnimationFrame(drawOscilloscope);
+function onModeChanged() {
+  const mode = document.getElementById('pipelineModeSelect').value;
+  const filterGroup = document.getElementById('filterTapsGroup');
+  const stepGroup = document.getElementById('stepSizeGroup');
+  const modelGroup = document.getElementById('modelSelectGroup');
 
-  const canvas = document.getElementById('micOscilloscopeCanvas');
-  const ctx = canvas.getContext('2d');
-  const bufferLength = analyserNode.frequencyBinCount;
-  const dataArray = new Uint8Array(bufferLength);
-  analyserNode.getByteTimeDomainData(dataArray);
-
-  ctx.fillStyle = '#03060f';
-  ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-  ctx.lineWidth = 2;
-  ctx.strokeStyle = '#38bdf8';
-  ctx.beginPath();
-
-  const sliceWidth = canvas.width * 1.0 / bufferLength;
-  let x = 0;
-
-  for (let i = 0; i < bufferLength; i++) {
-    const v = dataArray[i] / 128.0;
-    const y = v * (canvas.height / 2);
-
-    if (i === 0) {
-      ctx.moveTo(x, y);
-    } else {
-      ctx.lineTo(x, y);
-    }
-    x += sliceWidth;
-  }
-
-  ctx.lineTo(canvas.width, canvas.height / 2);
-  ctx.stroke();
+  if (filterGroup) filterGroup.style.display = (mode === 'ai_only') ? 'none' : 'flex';
+  if (stepGroup) stepGroup.style.display = (mode === 'ai_only') ? 'none' : 'flex';
+  if (modelGroup) modelGroup.style.display = (mode === 'anc_only') ? 'none' : 'flex';
 }
 
-/**
- * Client-Side WAV Encoder (Float32 to 16-bit mono WAV Data URI)
- */
-function encodeWAV(samples, sampleRate) {
-  const buffer = new ArrayBuffer(44 + samples.length * 2);
-  const view = new DataView(buffer);
+// Spectrogram Sub-Tab
+function switchSpectrogramTab(type) {
+  const sideBtn = document.getElementById('specTabSideBtn');
+  const diffBtn = document.getElementById('specTabDiffBtn');
+  const dualView = document.getElementById('spectrogramDualView');
+  const diffView = document.getElementById('spectrogramDiffView');
 
-  function writeString(offset, string) {
-    for (let i = 0; i < string.length; i++) {
-      view.setUint8(offset + i, string.charCodeAt(i));
-    }
-  }
-
-  // RIFF identifier
-  writeString(0, 'RIFF');
-  view.setUint32(4, 36 + samples.length * 2, true);
-  writeString(8, 'WAVE');
-  // fmt sub-chunk
-  writeString(12, 'fmt ');
-  view.setUint32(16, 16, true);
-  view.setUint16(20, 1, true); // PCM
-  view.setUint16(22, 1, true); // Mono
-  view.setUint32(24, sampleRate, true);
-  view.setUint32(28, sampleRate * 2, true);
-  view.setUint16(32, 2, true);
-  view.setUint16(34, 16, true);
-  // data sub-chunk
-  writeString(36, 'data');
-  view.setUint32(40, samples.length * 2, true);
-
-  // Write 16-bit PCM audio samples
-  let offset = 44;
-  for (let i = 0; i < samples.length; i++, offset += 2) {
-    const s = Math.max(-1, Math.min(1, samples[i]));
-    view.setInt16(offset, s < 0 ? s * 0x8000 : s * 0x7FFF, true);
-  }
-
-  const bytes = new Uint8Array(buffer);
-  let binary = '';
-  for (let i = 0; i < bytes.byteLength; i++) {
-    binary += String.fromCharCode(bytes[i]);
-  }
-  return 'data:audio/wav;base64,' + btoa(binary);
+  if (sideBtn) sideBtn.classList.toggle('active', type === 'side');
+  if (diffBtn) diffBtn.classList.toggle('active', type === 'diff');
+  if (dualView) dualView.style.display = (type === 'side') ? 'grid' : 'none';
+  if (diffView) diffView.style.display = (type === 'diff') ? 'block' : 'none';
 }
 
-/**
- * Execute Full Noise Cancellation Pipeline
- */
+// Main Execution Pipeline Call
 async function runProcessingPipeline() {
-  const executeBtn = document.getElementById('executeBtn');
+  const btn = document.getElementById('executeBtn');
   const spinner = document.getElementById('executeSpinner');
-  const icon = document.getElementById('executeIcon');
   const btnText = document.getElementById('executeBtnText');
-  const statusBadge = document.getElementById('systemStatusBadge');
 
-  // Payload assembly
+  if (btn) btn.disabled = true;
+  if (spinner) spinner.style.display = 'inline-block';
+  if (btnText) btnText.textContent = 'PROCESSING DSP & AI ENGINE...';
+
   const mode = document.getElementById('pipelineModeSelect').value;
   const modelName = document.getElementById('modelSelect').value;
-  const filterTaps = parseInt(document.getElementById('filterTapsSelect').value, 10);
+  const filterLength = parseInt(document.getElementById('filterTapsSelect').value, 10);
   const stepSize = parseFloat(document.getElementById('stepSizeSelect').value);
 
   const payload = {
-    mode: mode,
+    mode,
     model_name: modelName,
-    filter_length: filterTaps,
+    filter_length: filterLength,
     step_size: stepSize,
   };
 
-  if (currentSourceType === 'preset') {
-    payload.preset_id = document.getElementById('presetSelect').value;
-  } else if (currentSourceType === 'upload') {
-    if (!uploadedAudioBase64) {
+  if (currentSourceTab === 'preset') {
+    if (!selectedPresetId) {
+      alert('Please select a preset audio scenario.');
+      resetExecuteBtn();
+      return;
+    }
+    payload.preset_id = selectedPresetId;
+  } else if (currentSourceTab === 'upload') {
+    if (!uploadedFileBytesB64) {
       alert('Please upload an audio file first.');
+      resetExecuteBtn();
       return;
     }
-    payload.audio_base64 = uploadedAudioBase64;
-  } else if (currentSourceType === 'mic') {
-    if (!recordedAudioBase64) {
-      alert('Please record a live voice sample first.');
+    payload.audio_base64 = uploadedFileBytesB64;
+  } else if (currentSourceTab === 'mic') {
+    if (!micRecordingB64) {
+      alert('Please record audio using the microphone first.');
+      resetExecuteBtn();
       return;
     }
-    payload.audio_base64 = recordedAudioBase64;
+    payload.audio_base64 = micRecordingB64;
   }
-
-  // Set Loading UI
-  executeBtn.disabled = true;
-  spinner.style.display = 'inline-block';
-  icon.style.display = 'none';
-  btnText.textContent = 'PROCESSING AUDIO...';
-  statusBadge.textContent = 'ACTIVE / PROCESSING';
-  statusBadge.className = 'pill-val status-live';
 
   try {
     const res = await fetch('/api/process', {
@@ -450,179 +286,308 @@ async function runProcessingPipeline() {
       body: JSON.stringify(payload),
     });
 
-    const data = await res.json();
-    if (!data.success) {
-      alert(`Processing error: ${data.error || 'Unknown error'}`);
+    const result = await res.json();
+    if (!result.success) {
+      alert('Processing Error: ' + (result.error || result.message));
+      resetExecuteBtn();
       return;
     }
 
-    lastProcessResult = data;
-    renderResults(data);
+    renderResults(result);
 
   } catch (err) {
-    alert(`Server communication error: ${err.message}`);
-    console.error('Process error:', err);
+    alert('Server communication failed: ' + err.message);
   } finally {
-    executeBtn.disabled = false;
-    spinner.style.display = 'none';
-    icon.style.display = 'inline-block';
-    btnText.textContent = 'EXECUTE NOISE CANCELLATION';
-    statusBadge.textContent = 'STANDBY / READY';
+    resetExecuteBtn();
   }
 }
 
-/**
- * Render Audio, Spectrograms, and Metrics HUD
- */
-function renderResults(data) {
-  // 1. Audio Players
-  const inPlayer = document.getElementById('inputAudioPlayer');
-  const refPlayer = document.getElementById('refAudioPlayer');
-  const outPlayer = document.getElementById('outputAudioPlayer');
-  const refBox = document.getElementById('refChannelBox');
-  const dlBtn = document.getElementById('downloadEnhancedBtn');
-  const abToggleBtn = document.getElementById('abToggleBtn');
+function resetExecuteBtn() {
+  const btn = document.getElementById('executeBtn');
+  const spinner = document.getElementById('executeSpinner');
+  const btnText = document.getElementById('executeBtnText');
 
-  if (data.input_audio_base64) {
-    inPlayer.src = data.input_audio_base64;
-  }
+  if (btn) btn.disabled = false;
+  if (spinner) spinner.style.display = 'none';
+  if (btnText) btnText.textContent = 'EXECUTE NOISE CANCELLATION';
+}
 
-  if (data.reference_audio_base64) {
-    refPlayer.src = data.reference_audio_base64;
-    refBox.style.display = 'flex';
-  } else {
-    refBox.style.display = 'none';
-  }
+// Render Results Data
+function renderResults(res) {
+  const m = res.metrics;
 
-  if (data.enhanced_audio_base64) {
-    outPlayer.src = data.enhanced_audio_base64;
-    dlBtn.href = data.enhanced_audio_base64;
-    dlBtn.style.display = 'inline-flex';
-    abToggleBtn.disabled = false;
-  }
-
-  // 2. Spectrograms
-  const inSpecImg = document.getElementById('inputSpectrogramImg');
-  const outSpecImg = document.getElementById('outputSpectrogramImg');
-  const diffSpecImg = document.getElementById('diffSpectrogramImg');
-  const inPh = document.getElementById('inputSpecPlaceholder');
-  const outPh = document.getElementById('outputSpecPlaceholder');
-  const diffPh = document.getElementById('diffSpecPlaceholder');
-
-  if (data.input_spectrogram_base64) {
-    inSpecImg.src = data.input_spectrogram_base64;
-    inSpecImg.style.display = 'block';
-    if (inPh) inPh.style.display = 'none';
-  }
-
-  if (data.output_spectrogram_base64) {
-    outSpecImg.src = data.output_spectrogram_base64;
-    outSpecImg.style.display = 'block';
-    if (outPh) outPh.style.display = 'none';
-  }
-
-  if (data.difference_spectrogram_base64) {
-    diffSpecImg.src = data.difference_spectrogram_base64;
-    diffSpecImg.style.display = 'block';
-    if (diffPh) diffPh.style.display = 'none';
-  }
-
-  // 3. Metrics HUD
-  const m = data.metrics || {};
-  document.getElementById('metricAttenuation').textContent = `${m.estimated_attenuation_db > 0 ? '-' : ''}${Math.abs(m.estimated_attenuation_db || 0).toFixed(1)} dB`;
-
-  if (m.si_snr_improvement_db !== null && m.si_snr_improvement_db !== undefined) {
-    const sign = m.si_snr_improvement_db >= 0 ? '+' : '';
-    document.getElementById('metricSiSnr').textContent = `${sign}${m.si_snr_improvement_db.toFixed(1)} dB`;
-  } else {
-    document.getElementById('metricSiSnr').textContent = 'N/A (Mono)';
-  }
-
-  if (m.stoi_output !== null && m.stoi_output !== undefined) {
-    document.getElementById('metricStoi').textContent = `${m.stoi_input?.toFixed(2) || '0.00'} → ${m.stoi_output.toFixed(2)}`;
-  } else {
-    document.getElementById('metricStoi').textContent = 'N/A (No Ref)';
-  }
-
-  document.getElementById('metricRtRatio').textContent = `${(m.realtime_ratio || 0).toFixed(2)}x`;
+  // Overview HUD Metrics
+  document.getElementById('metricAttenuation').textContent = `-${m.estimated_attenuation_db.toFixed(1)} dB`;
+  document.getElementById('metricSiSnr').textContent = (m.si_snr_improvement_db !== null) ? `+${m.si_snr_improvement_db.toFixed(1)} dB` : 'N/A';
+  document.getElementById('metricStoi').textContent = (m.stoi_input !== null && m.stoi_output !== null) ? `${m.stoi_input.toFixed(2)} → ${m.stoi_output.toFixed(2)}` : 'N/A';
+  document.getElementById('metricRtRatio').textContent = `${m.realtime_ratio.toFixed(2)}x`;
 
   const rtBadge = document.getElementById('rtRatioBadge');
-  if (m.realtime_ratio && m.realtime_ratio < 1.0) {
-    rtBadge.textContent = `${m.realtime_ratio.toFixed(2)}x REAL-TIME READY`;
-    rtBadge.className = 'badge badge-emerald';
-  } else {
-    rtBadge.textContent = 'HIGH LOAD / BATCH';
-    rtBadge.className = 'badge badge-cyan';
+  if (rtBadge) {
+    rtBadge.textContent = `${m.realtime_ratio < 1.0 ? '< 1.0x REAL-TIME READY' : 'OFFLINE LATENCY'}`;
+    rtBadge.className = `badge ${m.realtime_ratio < 1.0 ? 'badge-emerald' : 'badge-cyan'}`;
   }
 
-  // 4. Latency Breakdown
-  const cap = m.capture_ms || 0.8;
-  const anc = m.anc_ms || 0.0;
-  const ai = m.ai_ms || 0.0;
-  const play = m.playback_ms || 1.0;
-  const total = cap + anc + ai + play;
+  // Latency Bar
+  const totalMs = m.total_processing_ms || 1.0;
+  document.getElementById('latencyTotalVal').textContent = `Total: ${totalMs.toFixed(1)} ms`;
+  document.getElementById('valLatCap').textContent = `${m.capture_ms.toFixed(1)}ms`;
+  document.getElementById('valLatAnc').textContent = `${m.anc_ms.toFixed(1)}ms`;
+  document.getElementById('valLatAi').textContent = `${m.ai_ms.toFixed(1)}ms`;
+  document.getElementById('valLatPlay').textContent = `${m.playback_ms.toFixed(1)}ms`;
 
-  document.getElementById('latencyTotalVal').textContent = `Total: ${total.toFixed(1)} ms`;
-  document.getElementById('valLatCap').textContent = `${cap.toFixed(1)}ms`;
-  document.getElementById('valLatAnc').textContent = `${anc.toFixed(1)}ms`;
-  document.getElementById('valLatAi').textContent = `${ai.toFixed(1)}ms`;
-  document.getElementById('valLatPlay').textContent = `${play.toFixed(1)}ms`;
+  document.getElementById('segCap').style.width = `${(m.capture_ms / totalMs * 100).toFixed(1)}%`;
+  document.getElementById('segAnc').style.width = `${(m.anc_ms / totalMs * 100).toFixed(1)}%`;
+  document.getElementById('segAi').style.width = `${(m.ai_ms / totalMs * 100).toFixed(1)}%`;
+  document.getElementById('segPlay').style.width = `${(m.playback_ms / totalMs * 100).toFixed(1)}%`;
 
-  const denom = Math.max(total, 0.1);
-  document.getElementById('segCap').style.width = `${(cap / denom) * 100}%`;
-  document.getElementById('segAnc').style.width = `${(anc / denom) * 100}%`;
-  document.getElementById('segAi').style.width = `${(ai / denom) * 100}%`;
-  document.getElementById('segPlay').style.width = `${(play / denom) * 100}%`;
-}
+  // Audio Players
+  const inPlayer = document.getElementById('inputAudioPlayer');
+  const outPlayer = document.getElementById('outputAudioPlayer');
+  const refPlayer = document.getElementById('refAudioPlayer');
+  const dlBtn = document.getElementById('downloadEnhancedBtn');
+  const abBtn = document.getElementById('abToggleBtn');
 
-/**
- * Spectrogram View Switcher (Dual vs Attenuation Heatmap)
- */
-function switchSpectrogramTab(view) {
-  const dualView = document.getElementById('spectrogramDualView');
-  const diffView = document.getElementById('spectrogramDiffView');
-  const sideBtn = document.getElementById('specTabSideBtn');
-  const diffBtn = document.getElementById('specTabDiffBtn');
+  if (inPlayer) inPlayer.src = res.input_audio_url || res.input_audio_base64;
+  if (outPlayer) outPlayer.src = res.enhanced_audio_url || res.enhanced_audio_base64;
+  if (refPlayer) refPlayer.src = res.reference_audio_url || res.reference_audio_base64 || '';
 
-  if (view === 'side') {
-    dualView.style.display = 'grid';
-    diffView.style.display = 'none';
-    sideBtn.classList.add('active');
-    diffBtn.classList.remove('active');
-  } else {
-    dualView.style.display = 'none';
-    diffView.style.display = 'block';
-    sideBtn.classList.remove('active');
-    diffBtn.classList.add('active');
+  if (dlBtn) {
+    dlBtn.href = res.enhanced_audio_url || res.enhanced_audio_base64;
+    dlBtn.style.display = 'inline-flex';
   }
+  if (abBtn) abBtn.disabled = false;
+
+  // Spectrograms
+  const inImg = document.getElementById('inputSpectrogramImg');
+  const outImg = document.getElementById('outputSpectrogramImg');
+  const diffImg = document.getElementById('diffSpectrogramImg');
+
+  if (inImg) { inImg.src = res.input_spectrogram_base64; inImg.style.display = 'block'; }
+  if (outImg) { outImg.src = res.output_spectrogram_base64; outImg.style.display = 'block'; }
+  if (diffImg) { diffImg.src = res.difference_spectrogram_base64; diffImg.style.display = 'block'; }
+
+  document.getElementById('inputSpecPlaceholder').style.display = 'none';
+  document.getElementById('outputSpecPlaceholder').style.display = 'none';
+  document.getElementById('diffSpecPlaceholder').style.display = 'none';
+
+  // Render Charts for Module 3, Module 4, Module 5, & Visuals
+  renderModule3(res.module3);
+  renderModule4(res.module4);
+  renderModule5(res.module5);
+  renderVisuals(res.visual_data);
 }
 
-/**
- * Instant A/B Audio Switcher
- * Seamlessly toggles playback timestamp between noisy input and enhanced output
- */
+// Instant A/B Toggle
 function toggleABPlayback() {
   const inPlayer = document.getElementById('inputAudioPlayer');
   const outPlayer = document.getElementById('outputAudioPlayer');
-  const toggleBtnText = document.getElementById('abToggleText');
+  const btnText = document.getElementById('abToggleText');
 
-  if (activeABChannel === 'output') {
-    // Switch to Noisy Input
-    const currTime = outPlayer.currentTime;
-    const isPlaying = !outPlayer.paused;
+  if (isPlayingClean) {
     outPlayer.pause();
-    inPlayer.currentTime = currTime;
-    if (isPlaying) inPlayer.play();
-    activeABChannel = 'input';
-    toggleBtnText.textContent = 'Instant A/B: Switch to Clean';
+    inPlayer.currentTime = outPlayer.currentTime;
+    inPlayer.play();
+    btnText.textContent = 'Instant A/B: Switch to Enhanced Speech';
+    isPlayingClean = false;
   } else {
-    // Switch to Clean Output
-    const currTime = inPlayer.currentTime;
-    const isPlaying = !inPlayer.paused;
     inPlayer.pause();
-    outPlayer.currentTime = currTime;
-    if (isPlaying) outPlayer.play();
-    activeABChannel = 'output';
-    toggleBtnText.textContent = 'Instant A/B: Switch to Noisy';
+    outPlayer.currentTime = inPlayer.currentTime;
+    outPlayer.play();
+    btnText.textContent = 'Instant A/B: Switch to Noisy Input';
+    isPlayingClean = true;
   }
+}
+
+// Module 3 Chart Renderer
+function renderModule3(mod3) {
+  if (!mod3) return;
+
+  document.getElementById('mod3InitErr').textContent = mod3.initial_wiener_error ? mod3.initial_wiener_error.toFixed(4) : '0.0000';
+  document.getElementById('mod3FinalErr').textContent = mod3.final_wiener_error ? mod3.final_wiener_error.toFixed(4) : '0.0000';
+  document.getElementById('mod3Ratio').textContent = mod3.wiener_error_ratio ? mod3.wiener_error_ratio.toFixed(4) : '0.0000';
+  
+  const badge = document.getElementById('mod3DecisionBadge');
+  if (badge) {
+    badge.textContent = mod3.moved_closer_to_wiener ? 'CONVERGED TO WIENER' : 'DIVERGED';
+    badge.className = `badge ${mod3.moved_closer_to_wiener ? 'badge-emerald' : 'badge-red'}`;
+  }
+
+  // MSE Curve Chart
+  createLineChart('chartMod3Mse', {
+    labels: mod3.lms_mse_curve.map((_, i) => i * 10),
+    datasets: [
+      { label: 'Standard LMS MSE', data: mod3.lms_mse_curve, borderColor: '#f59e0b', borderWidth: 2, fill: false },
+      { label: 'Normalized NLMS MSE', data: mod3.nlms_mse_curve, borderColor: '#10b981', borderWidth: 2, fill: false }
+    ]
+  }, 'Sample Iterations', 'Mean Squared Error');
+
+  // Coeffs Comparison Chart
+  createBarChart('chartMod3Coeffs', {
+    labels: mod3.wiener_coeffs.map((_, i) => `Tap ${i}`),
+    datasets: [
+      { label: 'Wiener Optimal Weights', data: mod3.wiener_coeffs, backgroundColor: 'rgba(56, 189, 248, 0.6)' },
+      { label: 'LMS Final Taps', data: mod3.lms_final_coeffs, backgroundColor: 'rgba(245, 158, 11, 0.6)' }
+    ]
+  }, 'Filter Taps', 'Weight Magnitude');
+}
+
+// Module 4 Chart Renderer
+function renderModule4(mod4) {
+  if (!mod4) return;
+
+  document.getElementById('mod4ResDirect').textContent = mod4.residual_power_ratio_direct ? mod4.residual_power_ratio_direct.toFixed(4) : '0.0000';
+  document.getElementById('mod4ResFxnlms').textContent = mod4.residual_power_ratio_fxnlms ? mod4.residual_power_ratio_fxnlms.toFixed(4) : '0.0000';
+  document.getElementById('mod4ResMismatched').textContent = mod4.residual_power_ratio_mismatched ? mod4.residual_power_ratio_mismatched.toFixed(4) : '0.0000';
+
+  // FxNLMS Error Power Chart
+  createLineChart('chartMod4Mse', {
+    labels: mod4.fxnlms_mse.map((_, i) => i * 10),
+    datasets: [
+      { label: 'Direct LMS (No S(z) Model)', data: mod4.direct_lms_mse, borderColor: '#ef4444', borderWidth: 2, fill: false },
+      { label: 'FxNLMS (Matched S(z) Model)', data: mod4.fxnlms_mse, borderColor: '#10b981', borderWidth: 2, fill: false },
+      { label: 'FxNLMS (Mismatched S(z) Model)', data: mod4.mismatched_fxnlms_mse, borderColor: '#f59e0b', borderWidth: 2, fill: false }
+    ]
+  }, 'Sample Iterations', 'Error Power e^2[n]');
+
+  // Impulse Paths Chart
+  createBarChart('chartMod4Paths', {
+    labels: mod4.primary_path_impulse.map((_, i) => `Tap ${i}`),
+    datasets: [
+      { label: 'Primary Path P(z)', data: mod4.primary_path_impulse, backgroundColor: 'rgba(59, 130, 246, 0.7)' },
+      { label: 'Secondary Path S(z)', data: mod4.secondary_path_impulse, backgroundColor: 'rgba(16, 185, 129, 0.7)' }
+    ]
+  }, 'Acoustic Taps', 'Amplitude');
+}
+
+// Module 5 Chart Renderer
+function renderModule5(mod5) {
+  if (!mod5) return;
+
+  document.getElementById('mod5Rmse').textContent = mod5.impulse_rmse ? mod5.impulse_rmse.toFixed(5) : '0.00000';
+  document.getElementById('mod5RelErr').textContent = mod5.relative_impulse_error ? mod5.relative_impulse_error.toFixed(5) : '0.00000';
+  document.getElementById('mod5MagRmse').textContent = mod5.magnitude_rmse_db ? `${mod5.magnitude_rmse_db.toFixed(2)} dB` : '0.00 dB';
+  document.getElementById('mod5PhaseRmse').textContent = mod5.phase_rmse_rad ? `${mod5.phase_rmse_rad.toFixed(2)} rad` : '0.00 rad';
+
+  // System ID Impulse Comparison
+  createLineChart('chartMod5Impulse', {
+    labels: mod5.true_impulse.map((_, i) => `Tap ${i}`),
+    datasets: [
+      { label: 'True Ground Truth S(z)', data: mod5.true_impulse, borderColor: '#38bdf8', borderWidth: 2, fill: false },
+      { label: 'Estimated Path S^(z)', data: mod5.estimated_impulse, borderColor: '#10b981', borderWidth: 2, borderDash: [4, 4], fill: false }
+    ]
+  }, 'Filter Taps', 'Impulse Response');
+
+  // Frequency Magnitude Response Chart
+  createLineChart('chartMod5Mag', {
+    labels: mod5.freq_axis_khz.map(f => f.toFixed(1)),
+    datasets: [
+      { label: 'True Path Magnitude (dB)', data: mod5.true_mag_db, borderColor: '#3b82f6', borderWidth: 2, fill: false },
+      { label: 'Estimated Path Magnitude (dB)', data: mod5.est_mag_db, borderColor: '#f59e0b', borderWidth: 2, borderDash: [3, 3], fill: false }
+    ]
+  }, 'Frequency (kHz)', 'Magnitude (dB)');
+}
+
+// Visuals Chart Renderer
+function renderVisuals(vis) {
+  if (!vis) return;
+
+  // Time Domain Waveforms
+  createLineChart('chartVisWaveform', {
+    labels: vis.time_s.map(t => `${t}s`),
+    datasets: [
+      { label: 'Input Audio (Disturbed)', data: vis.input_waveform, borderColor: '#f59e0b', borderWidth: 1.5, pointRadius: 0 },
+      { label: 'Enhanced Speech Output', data: vis.output_waveform, borderColor: '#10b981', borderWidth: 1.5, pointRadius: 0 }
+    ]
+  }, 'Time (seconds)', 'Amplitude');
+
+  // Frequency Spectrum
+  createLineChart('chartVisSpectrum', {
+    labels: vis.freq_khz.map(f => `${f}kHz`),
+    datasets: [
+      { label: 'Input Spectrum (dB)', data: vis.input_spectrum_db, borderColor: '#ef4444', borderWidth: 1.5, pointRadius: 0 },
+      { label: 'Enhanced Spectrum (dB)', data: vis.output_spectrum_db, borderColor: '#38bdf8', borderWidth: 1.5, pointRadius: 0 }
+    ]
+  }, 'Frequency (kHz)', 'Power (dB)');
+}
+
+// Chart.js Helper Functions
+function createLineChart(canvasId, data, xTitle, yTitle) {
+  const ctx = document.getElementById(canvasId);
+  if (!ctx) return;
+
+  if (chartInstances[canvasId]) {
+    chartInstances[canvasId].destroy();
+  }
+
+  const isLight = document.body.classList.contains('light-theme');
+  const textColor = isLight ? '#475569' : '#94a3b8';
+  const gridColor = isLight ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.08)';
+
+  chartInstances[canvasId] = new Chart(ctx, {
+    type: 'line',
+    data,
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: {
+          title: { display: true, text: xTitle, color: textColor, font: { size: 10 } },
+          ticks: { color: textColor, font: { size: 9 } },
+          grid: { color: gridColor },
+        },
+        y: {
+          title: { display: true, text: yTitle, color: textColor, font: { size: 10 } },
+          ticks: { color: textColor, font: { size: 9 } },
+          grid: { color: gridColor },
+        }
+      },
+      plugins: {
+        legend: { labels: { color: textColor, font: { size: 10 } } }
+      }
+    }
+  });
+}
+
+function createBarChart(canvasId, data, xTitle, yTitle) {
+  const ctx = document.getElementById(canvasId);
+  if (!ctx) return;
+
+  if (chartInstances[canvasId]) {
+    chartInstances[canvasId].destroy();
+  }
+
+  const isLight = document.body.classList.contains('light-theme');
+  const textColor = isLight ? '#475569' : '#94a3b8';
+  const gridColor = isLight ? 'rgba(0, 0, 0, 0.08)' : 'rgba(255, 255, 255, 0.08)';
+
+  chartInstances[canvasId] = new Chart(ctx, {
+    type: 'bar',
+    data,
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      scales: {
+        x: {
+          title: { display: true, text: xTitle, color: textColor, font: { size: 10 } },
+          ticks: { color: textColor, font: { size: 9 } },
+          grid: { color: gridColor },
+        },
+        y: {
+          title: { display: true, text: yTitle, color: textColor, font: { size: 10 } },
+          ticks: { color: textColor, font: { size: 9 } },
+          grid: { color: gridColor },
+        }
+      },
+      plugins: {
+        legend: { labels: { color: textColor, font: { size: 10 } } }
+      }
+    }
+  });
+}
+
+function updateChartColors() {
+  Object.values(chartInstances).forEach(chart => {
+    if (chart) chart.update();
+  });
 }

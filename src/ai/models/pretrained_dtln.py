@@ -133,16 +133,48 @@ class DTLNModel(EnhancementModel):
         self._model_path = Path(model_path) if model_path else _find_model_path()
         self._session: Any = None  # Lazy-loaded ONNX session dict
 
+    def _resolve_fallback_paths(self) -> list[Path]:
+        """Build ordered list of DTLN model directories to try.
+
+        Order: requested path first, then fp16, then stock (full precision).
+        This ensures we always find a working model even if the quantized
+        variant uses ops unsupported by the current ONNX Runtime build.
+        """
+        candidates: list[Path] = []
+
+        # 1. The explicitly requested path
+        if self._model_path is not None:
+            candidates.append(self._model_path)
+
+        # 2. Discover repo root for sibling model dirs
+        repo_root: Path | None = None
+        _this_dir = Path(__file__).resolve().parent
+        for parent in [_this_dir, *_this_dir.parents]:
+            if (parent / "pyproject.toml").exists():
+                repo_root = parent
+                break
+
+        if repo_root is not None:
+            models_dir = repo_root / "models"
+            # Add other variants (skip the one already in candidates)
+            for variant in ("dtln_quantized", "dtln_fp16", "dtln"):
+                variant_dir = models_dir / variant
+                if variant_dir.exists() and variant_dir not in candidates:
+                    resolved = variant_dir.resolve()
+                    if resolved not in [c.resolve() for c in candidates]:
+                        candidates.append(variant_dir)
+
+        return candidates
+
     def _ensure_session(self) -> None:
-        """Lazy-load the ONNX sessions on first use."""
+        """Lazy-load the ONNX sessions on first use.
+
+        Tries each candidate model directory in priority order.  If a
+        specific ONNX file fails to load (e.g. quantized ConvInteger op
+        unsupported), the next candidate is attempted automatically.
+        """
         if self._session is not None:
             return
-
-        if self._model_path is None:
-            raise FileNotFoundError(
-                "No DTLN model found. Set DTLN_MODEL_PATH or place "
-                "model_1.onnx + model_2.onnx in models/dtln/."
-            )
 
         try:
             import onnxruntime as ort
@@ -152,43 +184,70 @@ class DTLNModel(EnhancementModel):
                 "Install with: pip install onnxruntime"
             ) from exc
 
-        # Locate ONNX files
-        if self._model_path.is_dir():
-            onnx_files = sorted(self._model_path.glob("*.onnx"))
-        elif self._model_path.suffix == ".onnx":
-            onnx_files = [self._model_path]
-        else:
+        candidates = self._resolve_fallback_paths()
+        if not candidates:
             raise FileNotFoundError(
-                f"No .onnx files found at {self._model_path}"
+                "No DTLN model found. Set DTLN_MODEL_PATH or place "
+                "model_1.onnx + model_2.onnx in models/dtln/."
             )
 
-        if len(onnx_files) < 2:
-            raise FileNotFoundError(
-                f"DTLN requires model_1.onnx and model_2.onnx, "
-                f"found: {[f.name for f in onnx_files]}"
-            )
+        last_error: Exception | None = None
+        for candidate_path in candidates:
+            # Locate ONNX files in this candidate
+            if candidate_path.is_dir():
+                onnx_files = sorted(candidate_path.glob("*.onnx"))
+            elif candidate_path.suffix == ".onnx":
+                onnx_files = [candidate_path]
+            else:
+                continue
 
-        # Create inference sessions
-        sessions = [ort.InferenceSession(str(f)) for f in onnx_files[:2]]
+            if len(onnx_files) < 2:
+                continue
 
-        # Pre-allocate input dicts by inspecting model metadata
-        init_inputs = []
-        for sess in sessions:
-            inputs = {}
-            for inp in sess.get_inputs():
-                shape = [
-                    dim if isinstance(dim, int) else 1
-                    for dim in inp.shape
+            # Try creating inference sessions for both model files
+            try:
+                sessions = [
+                    ort.InferenceSession(str(f)) for f in onnx_files[:2]
                 ]
-                inp_dtype = np.float16 if "float16" in inp.type else np.float32
-                inputs[inp.name] = np.zeros(shape, dtype=inp_dtype)
-            init_inputs.append(inputs)
+            except Exception as e:
+                last_error = e
+                warnings.warn(
+                    f"DTLN: failed to load {candidate_path.name} "
+                    f"({type(e).__name__}: {e}). Trying next variant...",
+                    stacklevel=2,
+                )
+                continue
 
-        self._session = {
-            "type": "onnx",
-            "sessions": sessions,
-            "init_inputs": init_inputs,
-        }
+            # Success — record which variant actually loaded
+            self._loaded_variant = candidate_path.name
+
+            # Pre-allocate input dicts by inspecting model metadata
+            init_inputs = []
+            for sess in sessions:
+                inputs = {}
+                for inp in sess.get_inputs():
+                    shape = [
+                        dim if isinstance(dim, int) else 1
+                        for dim in inp.shape
+                    ]
+                    inp_dtype = (
+                        np.float16 if "float16" in inp.type else np.float32
+                    )
+                    inputs[inp.name] = np.zeros(shape, dtype=inp_dtype)
+                init_inputs.append(inputs)
+
+            self._session = {
+                "type": "onnx",
+                "sessions": sessions,
+                "init_inputs": init_inputs,
+            }
+            return
+
+        # All candidates exhausted
+        raise RuntimeError(
+            f"DTLN: all model variants failed to load. "
+            f"Last error: {last_error}"
+        )
 
     # ------------------------------------------------------------------
     # EnhancementModel interface
@@ -196,6 +255,11 @@ class DTLNModel(EnhancementModel):
 
     @property
     def name(self) -> str:
+        variant = getattr(self, "_loaded_variant", "dtln")
+        if variant == "dtln_quantized":
+            return "dtln_quantized"
+        elif variant == "dtln_fp16":
+            return "dtln_fp16"
         return "dtln"
 
     @property
