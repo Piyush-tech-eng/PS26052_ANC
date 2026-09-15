@@ -342,6 +342,33 @@ Designed for real-time live streaming monitoring:
 - **Zero Telemetry Fabrication**: Oscilloscope and spectrum displays only render when genuine live telemetry buffers are populated by the active audio pipeline, explicitly displaying "—" when idle.
 - **Hardware Telemetry HUD**: Monitors UDP receiver buffer depth, jitter compensation, algorithmic latency breakdown, and model health gate status.
 
+### 12.3 Dashboard Phase 3 Redesign (`src/anc/interface/`)
+
+The interactive mission presentation interface (§12.1) received a comprehensive visual and logic overhaul in Phase 3, while preserving all backend API contracts and core algorithm modules unchanged.
+
+**Design System Overhaul:**
+- **Token-driven CSS** — all colors, spacing, shadows, and typography use CSS custom properties in `:root`; zero hardcoded hex values in component rules.
+- **Semantic signal palette** — `--color-signal-noisy` (orange-600) for raw/input signal, `--color-signal-enhanced` (cyan-600) for processed output; applied consistently to waveform datasets, spectrogram labels, and legend dots.
+- **WCAG AA contrast compliance** — `--color-text-tertiary` raised from `#94a3b8` → `#64748b` (achieves 4.5:1 on white backgrounds). Audio player touch targets meet WCAG 2.1 minimum 44px.
+
+**Dark Mode:**
+- Full dark theme via `[data-theme="dark"]` on `<html>` — covers all surfaces, text, borders, shadows, and status badges.
+- Persisted in `localStorage`; respects the OS `prefers-color-scheme` on first visit.
+
+**Redesigned Header & Navigation:**
+- Branded header with animated radar SVG logo mark (concentric rings + sweep line).
+- Dynamic system status badge: `System Ready → Uploading → Processing Signal... → Enhancement Complete` with per-state color and pulse animations.
+- Sidebar step-state indicators (`●` current / `✓` completed / `○` pending) updated automatically as the user progresses.
+
+**New Metrics Surfaced:**
+- **PESQ** (Perceptual Evaluation of Speech Quality) — computed via the `pesq` package when available, with a documented reference-free approximation fallback.
+- **RMS and peak change (dB)** — quantifies signal-level modification.
+- **Reference-free SNR estimation** — labelled "Est. SNR" when no clean reference is supplied.
+
+**Analysis Tab Renaming:**
+- Tabs renamed from opaque module numbers to descriptive labels: "Adaptive Filtering", "ANC Plant Dynamics", "System Identification".
+- Chart.js panels with increased axis/tick/legend font sizes for readability.
+
 ---
 
 ## 13. Production Packaging & Verification

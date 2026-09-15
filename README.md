@@ -221,3 +221,85 @@ Execute the comprehensive test suite (342 unit and integration tests):
 ```bash
 pytest tests/ -v
 ```
+
+---
+
+## Phase 3 — Dashboard Rebuild & UI Enhancements
+
+The web interface (`src/anc/interface/`) received a comprehensive visual and logic overhaul. All backend APIs remain unchanged.
+
+### Running the Dashboard (Updated)
+
+The preferred entry point is the dedicated server module:
+
+```bash
+# Recommended — custom port, no auto-browser:
+python src/anc/interface/server.py --port 8080 --no-browser
+
+# Open browser automatically on launch:
+python src/anc/interface/server.py --port 8080
+
+# Legacy shorthand (wraps the above):
+python app.py
+```
+
+Then open **`http://localhost:8080`** in your browser.
+
+> **Tip**: On first visit the interface auto-detects your OS dark/light preference.  
+> Click the ☀️/🌙 button in the top-right header to override it at any time — the choice is remembered across sessions in `localStorage`.
+
+---
+
+### What changed
+
+#### Design System
+- **Token-driven CSS** — all colors, spacing, shadows, and typography use CSS custom properties in `:root`; zero hardcoded hex values in component rules.
+- **Font scale bumped** — `--text-xs` through `--text-3xl` increased by ~0.07–0.1 rem for comfortable readability across all cards and panels.
+- **Semantic signal palette** — `--color-signal-noisy` (orange-600) for raw/input signal, `--color-signal-enhanced` (cyan-600) for processed output; applied consistently to waveform datasets, spectrogram labels, and legend dots.
+- **WCAG AA contrast** — `--color-text-tertiary` raised from `#94a3b8` → `#64748b` (achieves 4.5:1 on white backgrounds).
+
+#### Dark Mode
+- Full dark theme via `[data-theme="dark"]` on `<html>` — covers all surfaces, text, borders, shadows, and status badges.
+- Persisted in `localStorage`; respects the OS `prefers-color-scheme` on first visit.
+- ☀️ / 🌙 toggle button in the top-right of the header.
+
+#### Header / Navbar
+- Replaced the plain long-text header with a proper branded header:
+  - Mini **radar SVG logo mark** (concentric rings + sweep line).
+  - Bold **"ANC Defence Suite"** app name + muted subtitle line.
+  - Dynamic **system status badge** cycling through: `System Ready → Uploading → Processing Signal... → Enhancement Complete` with distinct colors and pulse animations per state.
+- **Sidebar step-state indicators** — `●` (current) / `✓` (completed) / `○` (pending) badges on each nav item, updated automatically as the user progresses through Upload → Results → Analysis.
+
+#### Upload Screen
+- **Format hint** moved below the dropzone as plain muted text instead of pills inside the upload area.
+- Hero section rebuilt as an animated **radar SVG**: three staggered rings pulse/radiate outward from the centre, a rotating sweep line with echo arc trails, and blinking blip targets at random positions.
+
+#### Results Screen
+- **Unified score cards** — "Performance Scores" and "Target Benchmarks" merged into one full-width card per metric (SNR / STOI / PESQ). Each card shows the actual value, inline target, and a ✓/✕ pass-fail icon for colorblind-accessible feedback.
+- **`Est. SNR` label** — when no clean reference is available, the SNR label reads "Est. SNR" with a tooltip clarifying it is reference-free.
+- **Real-time ratio fix** — correctly computed as `processing_time_ms / (audio_duration_s × 1000)`; only labelled "(real-time capable)" when ratio < 1.0, otherwise "(offline only)".
+- **Numeric precision standardized** — dB/ratio values always 1 decimal place; ms values rounded to integer (< 10 ms shows 1 decimal).
+- **`Enhancement Results` `<h1>`** heading added at the top of the Results view.
+
+#### Analysis Screen
+- **Renamed tabs** — removed opaque module numbering: now "Adaptive Filtering", "ANC Plant Dynamics", "System Identification".
+- **`Deep Signal Analysis` `<h1>`** heading added at the top of the Analysis view.
+- **Chart readability** — axis title font 11→13 px, tick font 10→12 px, legend font 11→12 px across all Chart.js instances.
+- **Audio player** `min-height: 44px` for WCAG 2.1 touch-target compliance.
+
+---
+
+### Interface capabilities at a glance
+
+| Feature | Details |
+|---|---|
+| **Defence presets** | 36 curated scenarios — Helicopter, Armoured Vehicle, Artillery, Wind, Alarm, etc. |
+| **Custom upload** | WAV · MP3 · FLAC · AAC · OGG · WMA up to 50 MB |
+| **Live microphone** | In-browser `MediaRecorder` → base64 pipeline |
+| **Pipeline modes** | Hybrid (FxNLMS + DTLN), AI-Only (Neural DTLN), Classical ANC-Only (FxNLMS) |
+| **Neural backends** | DTLN FP32 ONNX, DTLN INT8 Quantized, Spectral Gating baseline |
+| **Spectrograms** | 0–8 kHz input + enhanced comparison images |
+| **Waveform / Spectrum** | Chart.js overlay comparisons (noisy input vs enhanced output) |
+| **Module analytics** | Adaptive Filtering convergence, ANC Plant dynamics, Secondary Path System ID |
+| **A/B audio player** | Toggle between enhanced and original audio in-browser |
+| **Dark mode** | Full token-driven dark theme, persisted across sessions |

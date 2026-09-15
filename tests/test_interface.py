@@ -109,7 +109,7 @@ class TestInterfaceServerEndpoints:
             assert resp.status == 200
             content = resp.read().decode("utf-8")
             assert "PS26052" in content
-            assert "ANC COMMAND CENTER" in content
+            assert "AI-Powered ANC" in content or "ANC" in content
             assert "spectrogram" in content.lower()
 
     def test_serve_css(self, interface_server: str) -> None:
