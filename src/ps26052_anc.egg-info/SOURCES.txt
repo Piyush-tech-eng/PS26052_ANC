@@ -145,6 +145,7 @@ tests/test_model_interface.py
 tests/test_module1_integration.py
 tests/test_overlap_add.py
 tests/test_phase1_bug_fixes.py
+tests/test_processor_model_routing.py
 tests/test_signal_generation.py
 tests/test_speaker_split_isolation.py
 tests/test_speech_metrics.py

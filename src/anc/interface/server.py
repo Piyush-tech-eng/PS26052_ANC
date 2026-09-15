@@ -51,22 +51,24 @@ class InterfaceRequestHandler(http.server.SimpleHTTPRequestHandler):
             self._serve_file(self.base_dir / "static" / "style.css", "text/css; charset=utf-8")
         elif path == "/static/app.js":
             self._serve_file(self.base_dir / "static" / "app.js", "application/javascript; charset=utf-8")
+        elif path.startswith("/results/"):
+            rel_path = path.replace("/results/", "", 1)
+            target_path = self.pipeline.repo_root / "results" / rel_path
+            content_type = "audio/wav" if target_path.suffix == ".wav" else "application/octet-stream"
+            self._serve_file(target_path, content_type)
         elif path == "/api/presets":
             self._handle_get_presets()
         elif path == "/api/hardware":
             self._handle_get_hardware()
         elif path == "/api/health":
-            self._json_response({"status": "ok", "app": "PS26052 ANC Unified Interface"})
-        elif path == "/favicon.ico":
-            self.send_response(204)
-            self.end_headers()
+            self._json_response({"status": "ok", "app": "PS26052 ANC Tactical Dashboard"})
         else:
             self.send_error(404, f"Path not found: {url.path}")
 
     def do_POST(self) -> None:
         url = urllib.parse.urlparse(self.path)
 
-        if url.path == "/api/process":
+        if url.path in ("/api/process", "/api/upload"):
             self._handle_post_process()
         else:
             self.send_error(404, f"API endpoint not found: {url.path}")
@@ -114,47 +116,70 @@ class InterfaceRequestHandler(http.server.SimpleHTTPRequestHandler):
             "models": models_status,
             "sample_rate": 16000,
             "frame_ms": 20,
-            "recommended_model": "dtln_quantized" if models_status["dtln_quantized"] else "dtln_stock",
+            "recommended_model": "dtln",
         }
         self._json_response(data)
 
     def _handle_post_process(self) -> None:
         try:
+            content_type = self.headers.get("Content-Type", "")
             length = int(self.headers.get("Content-Length", 0))
-            raw_body = self.rfile.read(length).decode("utf-8")
-            body = json.loads(raw_body)
-        except Exception as e:
-            self._json_response({"success": False, "error": f"Invalid JSON payload: {e}"}, status=400)
-            return
+            raw_body = self.rfile.read(length)
 
-        preset_id = body.get("preset_id")
-        audio_b64 = body.get("audio_base64")
-        mode = body.get("mode", "hybrid")
-        model_name = body.get("model_name", "dtln_quantized")
-        filter_length = int(body.get("filter_length", 64))
-        step_size = float(body.get("step_size", 0.01))
+            preset_id = None
+            audio_b64 = None
+            raw_audio_bytes = None
+            mode = "hybrid"
+            model_name = "dtln_quantized"
+            filter_length = 64
+            step_size = 0.01
 
-        audio_in = None
-        clean_ref = None
-        noise_ref = None
-        sr = 16000
+            if "application/json" in content_type:
+                body = json.loads(raw_body.decode("utf-8"))
+                preset_id = body.get("preset_id")
+                audio_b64 = body.get("audio_base64")
+                mode = body.get("mode", "hybrid")
+                model_name = body.get("model_name", "dtln_quantized")
+                filter_length = int(body.get("filter_length", 64))
+                step_size = float(body.get("step_size", 0.01))
+            elif "multipart/form-data" in content_type:
+                # Handle form file upload
+                boundary = content_type.split("boundary=")[1].encode()
+                parts = raw_body.split(b"--" + boundary)
+                for part in parts:
+                    if b'filename="' in part:
+                        headers_part, file_part = part.split(b"\r\n\r\n", 1)
+                        raw_audio_bytes = file_part.rsplit(b"\r\n", 1)[0]
+                    elif b'name="mode"' in part:
+                        mode = part.split(b"\r\n\r\n", 1)[1].rsplit(b"\r\n", 1)[0].decode().strip()
+                    elif b'name="model_name"' in part:
+                        model_name = part.split(b"\r\n\r\n", 1)[1].rsplit(b"\r\n", 1)[0].decode().strip()
+                    elif b'name="filter_length"' in part:
+                        filter_length = int(part.split(b"\r\n\r\n", 1)[1].rsplit(b"\r\n", 1)[0].decode().strip())
+                    elif b'name="step_size"' in part:
+                        step_size = float(part.split(b"\r\n\r\n", 1)[1].rsplit(b"\r\n", 1)[0].decode().strip())
+            else:
+                # Direct audio file payload
+                raw_audio_bytes = raw_body
 
-        try:
+            audio_in = None
+            clean_ref = None
+            noise_ref = None
+            sr = 16000
+
             if preset_id:
-                # Load preset (returns noisy, clean_ref, noise_ref, sr)
                 audio_in, clean_ref, noise_ref, sr = self.pipeline.load_preset_audio(preset_id)
             elif audio_b64:
-                # Decode base64 audio (handles mono and stereo)
                 if "," in audio_b64:
                     audio_b64 = audio_b64.split(",", 1)[1]
                 audio_bytes = base64.b64decode(audio_b64)
                 audio_in, noise_ref, sr = self.pipeline.decode_audio_bytes(audio_bytes)
-                clean_ref = None
+            elif raw_audio_bytes:
+                audio_in, noise_ref, sr = self.pipeline.decode_audio_bytes(raw_audio_bytes)
             else:
-                self._json_response({"success": False, "error": "No audio input provided. Supply preset_id or audio_base64."}, status=400)
+                self._json_response({"success": False, "error": "No audio input provided."}, status=400)
                 return
 
-            # Execute pipeline
             result = self.pipeline.process(
                 audio_in=audio_in,
                 sample_rate=sr,
@@ -166,22 +191,7 @@ class InterfaceRequestHandler(http.server.SimpleHTTPRequestHandler):
                 clean_reference=clean_ref,
             )
 
-            response_data = {
-                "success": result.success,
-                "message": result.message,
-                "metrics": asdict(result.metrics),
-                "enhanced_audio_base64": result.enhanced_audio_base64,
-                "input_audio_base64": result.input_audio_base64,
-                "reference_audio_base64": result.reference_audio_base64,
-                "input_spectrogram_base64": result.input_spectrogram_base64,
-                "output_spectrogram_base64": result.output_spectrogram_base64,
-                "difference_spectrogram_base64": result.difference_spectrogram_base64,
-                "model_name": result.model_name,
-                "mode": result.mode,
-                "filter_taps": result.filter_taps,
-                "sample_rate": result.sample_rate,
-            }
-            self._json_response(response_data)
+            self._json_response(asdict(result))
 
         except Exception as e:
             import traceback
