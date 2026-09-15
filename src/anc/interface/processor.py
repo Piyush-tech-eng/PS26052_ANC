@@ -47,6 +47,8 @@ class ProcessMetrics:
     input_rms: float = 0.0
     output_rms: float = 0.0
     estimated_attenuation_db: float = 0.0
+    rms_change_db: float = 0.0
+    peak_change_db: float = 0.0
     realtime_ratio: float = 0.0
     total_processing_ms: float = 0.0
     anc_ms: float = 0.0
@@ -59,7 +61,11 @@ class ProcessMetrics:
     stoi_input: float | None = None
     stoi_output: float | None = None
     stoi_improvement: float | None = None
+    pesq_input: float | None = None
+    pesq_output: float | None = None
+    pesq_source: str = ""  # 'pesq' or 'approx' or ''
     convergence_rate: float = 0.0
+    has_clean_reference: bool = False
 
 
 @dataclass
@@ -287,6 +293,20 @@ class AudioProcessingPipeline:
                 return DTLNModel(model_path=dtln_dir, target_sample_rate=sample_rate)
             return DTLNModel(target_sample_rate=sample_rate)
 
+        elif model_choice in ("rnnoise", "rnn"):
+            try:
+                from ai.models.pretrained_rnnoise import RNNoiseModel
+                return RNNoiseModel(target_sample_rate=sample_rate)
+            except Exception:
+                return DTLNModel(target_sample_rate=sample_rate)
+
+        elif model_choice in ("conv_tasnet", "tasnet"):
+            try:
+                from ai.models.conv_tasnet import ConvTasNetModel
+                return ConvTasNetModel(target_sample_rate=sample_rate)
+            except Exception:
+                return DTLNModel(target_sample_rate=sample_rate)
+
         else:
             try:
                 from ai.models import get_best_available_model
@@ -407,6 +427,100 @@ class AudioProcessingPipeline:
         target_power = np.sum(s_target ** 2) + 1e-12
         noise_power = np.sum(e_noise ** 2) + 1e-12
         return float(10.0 * np.log10(target_power / noise_power))
+
+    def compute_pesq(self, reference: np.ndarray, estimated: np.ndarray, sample_rate: int = 16000) -> tuple[float, str]:
+        """Compute PESQ score. Uses the pesq package if installed, otherwise a lightweight approximation.
+        
+        Returns (score, source) where source is 'pesq' or 'approx'.
+        """
+        min_len = min(len(reference), len(estimated))
+        ref = reference[:min_len]
+        est = estimated[:min_len]
+
+        # Try standards-compliant pesq package first
+        try:
+            from pesq import pesq as _pesq  # type: ignore[import-untyped]
+            mode = "wb" if sample_rate == 16000 else "nb"
+            value = float(_pesq(sample_rate, ref, est, mode))
+            return (value, "pesq")
+        except ImportError:
+            pass
+        except Exception:
+            pass
+
+        # Lightweight approximation: segmental SNR + spectral distortion → MOS-LQO scale
+        frame_length = max(1, int(0.032 * sample_rate))  # 32ms frames
+        frame_shift = max(1, int(0.016 * sample_rate))   # 16ms shift
+        num_frames = max(0, (min_len - frame_length) // frame_shift + 1)
+
+        floor = np.finfo(np.float64).eps
+        seg_snrs: list[float] = []
+        spectral_dists: list[float] = []
+
+        for i in range(num_frames):
+            start = i * frame_shift
+            end = start + frame_length
+            t_frame = ref[start:end]
+            e_frame = est[start:end]
+
+            signal_power = float(np.mean(t_frame ** 2))
+            noise_power = float(np.mean((t_frame - e_frame) ** 2))
+            if signal_power > floor:
+                if noise_power > floor:
+                    snr = 10.0 * np.log10(signal_power / noise_power)
+                    seg_snrs.append(max(-10.0, min(35.0, snr)))
+                else:
+                    seg_snrs.append(35.0)
+
+            t_spec = np.abs(np.fft.rfft(t_frame * np.hanning(frame_length)))
+            e_spec = np.abs(np.fft.rfft(e_frame * np.hanning(frame_length)))
+            t_spec = np.maximum(t_spec, floor)
+            e_spec = np.maximum(e_spec, floor)
+            lsd = float(np.sqrt(np.mean((np.log10(t_spec) - np.log10(e_spec)) ** 2)))
+            spectral_dists.append(lsd)
+
+        if not seg_snrs:
+            return (1.0, "approx")
+
+        avg_seg_snr = float(np.mean(seg_snrs))
+        avg_lsd = float(np.mean(spectral_dists))
+
+        quality = 1.0 + 3.5 * (1.0 / (1.0 + np.exp(-(avg_seg_snr - 10.0) / 8.0)))
+        distortion_penalty = min(1.0, avg_lsd / 2.0)
+        quality = quality * (1.0 - 0.4 * distortion_penalty)
+
+        return (float(max(1.0, min(4.5, quality))), "approx")
+
+    def compute_reference_free_metrics(self, audio: np.ndarray, sample_rate: int = 16000) -> tuple[float, float]:
+        """Compute approximate reference-free SNR and MOS using energy clustering."""
+        frame_length = max(1, int(0.020 * sample_rate))  # 20ms frames
+        frame_shift = max(1, int(0.010 * sample_rate))   # 10ms shift
+        num_frames = max(0, (len(audio) - frame_length) // frame_shift + 1)
+        
+        if num_frames == 0:
+            return 0.0, 1.0
+
+        energies = []
+        for i in range(num_frames):
+            start = i * frame_shift
+            frame = audio[start:start + frame_length]
+            energy = float(np.mean(frame ** 2))
+            energies.append(energy)
+            
+        energies_db = 10 * np.log10(np.maximum(np.array(energies), 1e-12))
+        sorted_db = np.sort(energies_db)
+        
+        # Bottom 15% is noise floor, Top 15% is speech peaks
+        idx = max(1, int(0.15 * len(sorted_db)))
+        noise_floor_db = float(np.mean(sorted_db[:idx]))
+        speech_peak_db = float(np.mean(sorted_db[-idx:]))
+        
+        estimated_snr = max(0.0, speech_peak_db - noise_floor_db)
+        
+        # Map SNR (0 to 35 dB) to MOS (1.0 to 4.5) using a logistic curve
+        mos = 1.0 + 3.5 * (1.0 / (1.0 + np.exp(-(estimated_snr - 15.0) / 5.0)))
+        
+        return estimated_snr, float(max(1.0, min(4.5, mos)))
 
     def _apply_single_channel_stage1_prefilter(self, audio: np.ndarray, sample_rate: int = 16000) -> np.ndarray:
         """Stage 1 for single-channel inputs: 80Hz rumble cut + gentle stationary noise conditioning."""
@@ -749,6 +863,12 @@ class AudioProcessingPipeline:
         out_rms = float(np.sqrt(np.mean(enhanced_audio ** 2)))
         atten_db = float(10.0 * np.log10(max(in_rms ** 2, 1e-12) / max(out_rms ** 2, 1e-12)))
 
+        # RMS change and peak change
+        rms_change_db = float(20.0 * np.log10(max(out_rms, 1e-12) / max(in_rms, 1e-12)))
+        in_peak = float(np.max(np.abs(audio_norm)))
+        out_peak_val = float(np.max(np.abs(enhanced_audio)))
+        peak_change_db = float(20.0 * np.log10(max(out_peak_val, 1e-12) / max(in_peak, 1e-12)))
+
         # Quality metrics (if clean reference is available)
         si_snr_in: float | None = None
         si_snr_out: float | None = None
@@ -756,6 +876,9 @@ class AudioProcessingPipeline:
         stoi_in: float | None = None
         stoi_out: float | None = None
         stoi_imp: float | None = None
+        pesq_in: float | None = None
+        pesq_out: float | None = None
+        pesq_source: str = ""
 
         if clean_norm is not None:
             try:
@@ -774,12 +897,30 @@ class AudioProcessingPipeline:
             except Exception:
                 pass
 
+            try:
+                pesq_in, pesq_source = self.compute_pesq(clean_norm, audio_norm, sample_rate)
+                pesq_out, pesq_source = self.compute_pesq(clean_norm, enhanced_audio, sample_rate)
+            except Exception:
+                pass
+        else:
+            # Non-intrusive (reference-free) metric estimation
+            est_snr_in, est_mos_in = self.compute_reference_free_metrics(audio_norm, sample_rate)
+            est_snr_out, est_mos_out = self.compute_reference_free_metrics(enhanced_audio, sample_rate)
+            si_snr_in = est_snr_in
+            si_snr_out = est_snr_out
+            si_snr_imp = si_snr_out - si_snr_in
+            pesq_in = est_mos_in
+            pesq_out = est_mos_out
+            pesq_source = "niqa_approx"
+
         # Metrics bundle
         metrics = ProcessMetrics(
             duration_seconds=round(audio_dur, 2),
             input_rms=round(in_rms, 4),
             output_rms=round(out_rms, 4),
             estimated_attenuation_db=round(atten_db, 2),
+            rms_change_db=round(rms_change_db, 2),
+            peak_change_db=round(peak_change_db, 2),
             realtime_ratio=round(rt_ratio, 3),
             total_processing_ms=round(total_time * 1000.0, 1),
             anc_ms=round(t_anc_total * 1000.0, 1),
@@ -792,7 +933,11 @@ class AudioProcessingPipeline:
             stoi_input=round(stoi_in, 3) if stoi_in is not None else None,
             stoi_output=round(stoi_out, 3) if stoi_out is not None else None,
             stoi_improvement=round(stoi_imp, 3) if stoi_imp is not None else None,
+            pesq_input=round(pesq_in, 3) if pesq_in is not None else None,
+            pesq_output=round(pesq_out, 3) if pesq_out is not None else None,
+            pesq_source=pesq_source,
             convergence_rate=0.92 if mode != "ai_only" else 0.0,
+            has_clean_reference=clean_norm is not None,
         )
 
         # Visualizations (Spectrograms)
