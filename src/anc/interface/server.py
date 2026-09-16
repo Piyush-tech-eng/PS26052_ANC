@@ -133,11 +133,13 @@ class InterfaceRequestHandler(http.server.SimpleHTTPRequestHandler):
             model_name = "dtln_quantized"
             filter_length = 64
             step_size = 0.01
+            clean_ref_b64 = None
 
             if "application/json" in content_type:
                 body = json.loads(raw_body.decode("utf-8"))
                 preset_id = body.get("preset_id")
                 audio_b64 = body.get("audio_base64")
+                clean_ref_b64 = body.get("clean_reference_base64")
                 mode = body.get("mode", "hybrid")
                 model_name = body.get("model_name", "dtln_quantized")
                 filter_length = int(body.get("filter_length", 64))
@@ -174,6 +176,14 @@ class InterfaceRequestHandler(http.server.SimpleHTTPRequestHandler):
                     audio_b64 = audio_b64.split(",", 1)[1]
                 audio_bytes = base64.b64decode(audio_b64)
                 audio_in, noise_ref, sr = self.pipeline.decode_audio_bytes(audio_bytes)
+                
+                # Check for optional clean reference in custom upload
+                if clean_ref_b64:
+                    if "," in clean_ref_b64:
+                        clean_ref_b64 = clean_ref_b64.split(",", 1)[1]
+                    clean_ref_bytes = base64.b64decode(clean_ref_b64)
+                    clean_ref, _, _ = self.pipeline.decode_audio_bytes(clean_ref_bytes)
+                    
             elif raw_audio_bytes:
                 audio_in, noise_ref, sr = self.pipeline.decode_audio_bytes(raw_audio_bytes)
             else:

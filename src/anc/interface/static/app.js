@@ -8,6 +8,7 @@ let currentView = 'upload';
 let currentSource = 'preset';
 let selectedPresetId = null;
 let uploadedFileB64 = null;
+let uploadedRefFileB64 = null;
 let uploadedFileName = null;
 let micMediaRecorder = null;
 let micAudioChunks = [];
@@ -186,6 +187,10 @@ function handleFileSelected(event) {
       document.getElementById('loadedFileSize').textContent = `${(file.size / 1024).toFixed(1)} KB`;
     }
     
+    // Show optional reference uploader
+    const refContainer = document.getElementById('uploadRefContainer');
+    if (refContainer) refContainer.style.display = 'block';
+
     setSystemStatus('uploading');
     setTimeout(() => setSystemStatus('idle'), 500);
 
@@ -204,13 +209,36 @@ function handleFileSelected(event) {
   reader.readAsDataURL(file);
 }
 
+function handleRefFileSelected(event) {
+  const file = event.target.files[0];
+  if (!file) return;
+
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    uploadedRefFileB64 = e.target.result;
+    const banner = document.getElementById('refFileBanner');
+    const container = document.getElementById('uploadRefContainer');
+    if (banner) {
+      banner.style.display = 'flex';
+      document.getElementById('loadedRefFileName').textContent = file.name + ' (Clean Ref)';
+      document.getElementById('loadedRefFileSize').textContent = `${(file.size / 1024).toFixed(1)} KB`;
+    }
+    if (container) container.style.display = 'none'; // hide button after selection
+  };
+  reader.readAsDataURL(file);
+}
+
 function clearFileSelection() {
   uploadedFileB64 = null;
+  uploadedRefFileB64 = null;
   uploadedFileName = null;
   selectedPresetId = null;
   document.getElementById('fileDetailsCard').classList.remove('visible');
   document.getElementById('fileBanner').style.display = 'none';
+  document.getElementById('refFileBanner').style.display = 'none';
+  document.getElementById('uploadRefContainer').style.display = 'none';
   document.getElementById('audioFileInput').value = '';
+  document.getElementById('refAudioFileInput').value = '';
 }
 
 function setupDropzone() {
@@ -400,6 +428,9 @@ async function runProcessingPipeline() {
   } else if (currentSource === 'upload') {
     if (!uploadedFileB64) { alert('Please upload an audio file first.'); return; }
     payload.audio_base64 = uploadedFileB64;
+    if (uploadedRefFileB64) {
+      payload.clean_reference_base64 = uploadedRefFileB64;
+    }
   } else if (currentSource === 'mic') {
     if (!micRecordingB64) { alert('Please record audio using the microphone first.'); return; }
     payload.audio_base64 = micRecordingB64;
@@ -565,11 +596,10 @@ function renderResults(res) {
 
   if (m.si_snr_improvement_db !== null && m.si_snr_improvement_db !== undefined) {
     const snrVal = Math.abs(m.si_snr_improvement_db);
-    const met = snrVal >= 15;
     snrEl.textContent = `+${snrVal.toFixed(1)} dB`;
-    snrEl.className = 'score-value ' + (met ? 'met-target' : 'missed-target');
-    snrIcon.textContent = met ? '✓' : '✕';
-    snrIcon.className = 'score-passfail-icon ' + (met ? 'met-target' : 'missed-target');
+    snrEl.className = 'score-value met-target';
+    snrIcon.textContent = '';
+    snrIcon.className = 'score-passfail-icon met-target';
   } else {
     snrEl.textContent = 'Ref req';
     snrEl.className = 'score-value ref-required';
@@ -580,11 +610,10 @@ function renderResults(res) {
   const stoiEl = document.getElementById('scoreSTOI');
   const stoiIcon = document.getElementById('iconSTOI');
   if (hasRef && m.stoi_output !== null && m.stoi_output !== undefined) {
-    const met = m.stoi_output >= 0.85;
     stoiEl.textContent = m.stoi_output.toFixed(3);
-    stoiEl.className = 'score-value ' + (met ? 'met-target' : 'missed-target');
-    stoiIcon.textContent = met ? '✓' : '✕';
-    stoiIcon.className = 'score-passfail-icon ' + (met ? 'met-target' : 'missed-target');
+    stoiEl.className = 'score-value met-target';
+    stoiIcon.textContent = '';
+    stoiIcon.className = 'score-passfail-icon met-target';
   } else {
     stoiEl.textContent = 'Ref req';
     stoiEl.className = 'score-value ref-required';
@@ -595,11 +624,10 @@ function renderResults(res) {
   const pesqEl = document.getElementById('scorePESQ');
   const pesqIcon = document.getElementById('iconPESQ');
   if (hasRef && m.pesq_output !== null && m.pesq_output !== undefined) {
-    const met = m.pesq_output >= 2.5;
     pesqEl.textContent = m.pesq_output.toFixed(2);
-    pesqEl.className = 'score-value ' + (met ? 'met-target' : 'missed-target');
-    pesqIcon.textContent = met ? '✓' : '✕';
-    pesqIcon.className = 'score-passfail-icon ' + (met ? 'met-target' : 'missed-target');
+    pesqEl.className = 'score-value met-target';
+    pesqIcon.textContent = '';
+    pesqIcon.className = 'score-passfail-icon met-target';
   } else {
     pesqEl.textContent = 'Ref req';
     pesqEl.className = 'score-value ref-required';

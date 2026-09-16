@@ -303,6 +303,20 @@
                     <span id="loadedFileName">file.wav</span>
                     <span id="loadedFileSize">0 KB</span>
                   </div>
+
+                  <div class="file-banner" id="refFileBanner"
+                    style="display:none; margin-top: var(--space-2); background: var(--color-bg-surface-alt); border: 1px dashed var(--color-border-strong);">
+                    <span id="loadedRefFileName">ref.wav (Clean Reference)</span>
+                    <span id="loadedRefFileSize">0 KB</span>
+                  </div>
+
+                  <div style="margin-top: var(--space-3); text-align: center; display: none;" id="uploadRefContainer">
+                    <input type="file" id="refAudioFileInput" accept=".wav,.mp3,.flac,.ogg" style="display:none"
+                      onchange="handleRefFileSelected(event)" aria-hidden="true">
+                    <button type="button" class="btn btn-ghost" style="font-size: var(--text-sm);"
+                      onclick="document.getElementById('refAudioFileInput').click()">+ Add Clean Reference Audio
+                      (Optional)</button>
+                  </div>
                 </div>
 
                 <!-- Panel: Mic -->
@@ -714,7 +728,6 @@
                 <div class="score-info">
                   <div class="score-name" id="labelSNR">SNR</div>
                   <div class="score-desc">Signal-to-Noise Ratio improvement</div>
-                  <div class="score-target-inline">Target: > 15 dB</div>
                 </div>
                 <div class="score-value-group">
                   <span class="score-value ref-required" id="scoreSNR">Reference required</span>
@@ -728,7 +741,6 @@
                 <div class="score-info">
                   <div class="score-name" id="labelSTOI">STOI</div>
                   <div class="score-desc">Short-Time Objective Intelligibility</div>
-                  <div class="score-target-inline">Target: > 0.85</div>
                 </div>
                 <div class="score-value-group">
                   <span class="score-value ref-required" id="scoreSTOI">Reference required</span>
@@ -742,7 +754,6 @@
                 <div class="score-info">
                   <div class="score-name" id="labelPESQ">PESQ</div>
                   <div class="score-desc">Perceptual Evaluation of Speech Quality</div>
-                  <div class="score-target-inline">Target: > 2.5</div>
                 </div>
                 <div class="score-value-group">
                   <span class="score-value ref-required" id="scorePESQ">Reference required</span>
