@@ -266,7 +266,24 @@ class HybridEngine:
             reference = np.asarray(reference, dtype=np.float64).ravel()
             if len(reference) != len(measured):
                 raise ValueError("reference and measured must have equal lengths.")
-            anc_output = self._anc.process_frame(reference, measured)
+
+            # Crosstalk guard: if reference is heavily correlated with measured
+            # (indicating speech leakage or identical stereo channel), bypass classical ANC
+            # to protect the primary speech signal from destructive cancellation.
+            norm_m = float(np.linalg.norm(measured))
+            norm_r = float(np.linalg.norm(reference))
+            corr_mr = 0.0
+            if norm_m > 1e-8 and norm_r > 1e-8:
+                corr_mr = float(abs(np.dot(measured, reference)) / (norm_m * norm_r))
+
+            if corr_mr > 0.85:
+                anc_output = measured.copy()
+            else:
+                anc_output = self._anc.process_frame(reference, measured)
+                res_rms = float(np.sqrt(np.mean(anc_output ** 2)))
+                meas_rms = float(np.sqrt(np.mean(measured ** 2)))
+                if meas_rms > 0.01 and res_rms < 0.10 * meas_rms:
+                    anc_output = measured.copy()
         else:
             anc_output = measured.copy()
         t_anc_end = time.perf_counter()

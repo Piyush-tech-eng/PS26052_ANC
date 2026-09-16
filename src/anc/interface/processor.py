@@ -222,12 +222,14 @@ class AudioProcessingPipeline:
     def decode_audio_bytes(self, data: bytes) -> tuple[np.ndarray, np.ndarray | None, int]:
         """Decode raw audio bytes (WAV, MP3, FLAC) into float64 arrays and sample rate.
         
-        If stereo:
-            primary_channel = audio[:, 0]
-            ref_noise_channel = audio[:, 1]
-        If mono:
-            primary_channel = audio
-            ref_noise_channel = None
+        Channel Handling:
+            - If multi-channel (stereo): Checks cross-correlation between channels.
+              If channels are correlated (|corr| > 0.15), treats as standard stereo
+              recording, cleanly downmixes to mono (0.5 * (ch0 + ch1)), and returns
+              ref_noise=None to prevent destructive speech cancellation.
+              If channels are uncorrelated (|corr| <= 0.15), treats ch1 as an
+              isolated acoustic noise reference for dual-microphone ANC.
+            - If mono: Returns primary audio array and ref_noise=None.
         """
         buf = io.BytesIO(data)
         try:
@@ -247,9 +249,25 @@ class AudioProcessingPipeline:
         ref_noise = None
         if audio.ndim > 1:
             if audio.shape[1] >= 2:
-                # Stereo input: Ch0 = Error/Measured, Ch1 = Noise Reference
-                ref_noise = audio[:, 1].astype(np.float64)
-            audio = audio[:, 0]
+                ch0 = audio[:, 0].astype(np.float64)
+                ch1 = audio[:, 1].astype(np.float64)
+
+                norm0 = float(np.linalg.norm(ch0))
+                norm1 = float(np.linalg.norm(ch1))
+                corr = 0.0
+                if norm0 > 1e-8 and norm1 > 1e-8:
+                    corr = float(np.dot(ch0, ch1) / (norm0 * norm1))
+
+                # Standard stereo audio (speech/music present in both channels)
+                if abs(corr) > 0.15:
+                    audio = 0.5 * (ch0 + ch1)
+                    ref_noise = None
+                else:
+                    # Uncorrelated channel 1 represents a dedicated acoustic noise reference
+                    audio = ch0
+                    ref_noise = ch1
+            else:
+                audio = audio[:, 0].astype(np.float64)
 
         return audio.astype(np.float64), ref_noise, sr
 
@@ -742,6 +760,25 @@ class AudioProcessingPipeline:
         if clean_reference is None and reference_audio is not None:
             clean_reference = reference_audio
 
+        # Convert any multi-channel arrays cleanly to 1D mono
+        if audio_in.ndim > 1:
+            if audio_in.shape[1] >= 2:
+                audio_in = np.mean(audio_in, axis=1)
+            else:
+                audio_in = audio_in[:, 0]
+
+        if clean_reference is not None and clean_reference.ndim > 1:
+            if clean_reference.shape[1] >= 2:
+                clean_reference = np.mean(clean_reference, axis=1)
+            else:
+                clean_reference = clean_reference[:, 0]
+
+        if noise_reference is not None and noise_reference.ndim > 1:
+            if noise_reference.shape[1] >= 2:
+                noise_reference = np.mean(noise_reference, axis=1)
+            else:
+                noise_reference = noise_reference[:, 0]
+
         target_sr = 16000
         if sample_rate != target_sr:
             num_samples = int(len(audio_in) * float(target_sr) / sample_rate)
@@ -777,7 +814,18 @@ class AudioProcessingPipeline:
         # -----------------------------------------------------------------
         if mode == "anc_only":
             t_anc_start = time.perf_counter()
+            use_dual_anc = False
             if noise_norm is not None:
+                norm_a = float(np.linalg.norm(audio_norm))
+                norm_n = float(np.linalg.norm(noise_norm))
+                corr_an = 0.0
+                if norm_a > 1e-8 and norm_n > 1e-8:
+                    corr_an = float(abs(np.dot(audio_norm, noise_norm)) / (norm_a * norm_n))
+                # Only use dual-mic FxNLMS if noise reference is not dominated by primary speech
+                if corr_an <= 0.60:
+                    use_dual_anc = True
+
+            if use_dual_anc:
                 # True FxNLMS with acoustic noise reference
                 anc_cfg = FrameANCConfig(filter_length=filter_length, step_size=step_size)
                 sec_path = np.zeros(filter_length, dtype=np.float64)
@@ -794,8 +842,17 @@ class AudioProcessingPipeline:
 
                     canc_frame = anc.process_frame(x_chunk, d_chunk)
                     output_frames.append(canc_frame[: min(frame_size, len(audio_norm) - i)])
-                enhanced_audio = np.concatenate(output_frames)[: len(audio_norm)]
-                actual_model_name = "Dual-Mic FxNLMS"
+                cand_audio = np.concatenate(output_frames)[: len(audio_norm)]
+
+                # Safety guard against destructive cancellation
+                res_rms = float(np.sqrt(np.mean(cand_audio ** 2)))
+                in_rms_val = float(np.sqrt(np.mean(audio_norm ** 2)))
+                if in_rms_val > 0.01 and res_rms < 0.10 * in_rms_val:
+                    enhanced_audio = self._apply_single_channel_stage1_prefilter(audio_norm, sample_rate)
+                    actual_model_name = "Classical Spectral Pre-Filter"
+                else:
+                    enhanced_audio = cand_audio
+                    actual_model_name = "Dual-Mic FxNLMS"
             else:
                 # Single-channel classical pre-filter
                 enhanced_audio = self._apply_single_channel_stage1_prefilter(audio_norm, sample_rate)
@@ -816,10 +873,20 @@ class AudioProcessingPipeline:
             # HYBRID CASCADE: Stage 1 (Classical) -> Stage 2 (Neural AI)
             # -------------------------------------------------------------
             model = self.load_model(model_name, sample_rate=sample_rate)
-            actual_model_name = f"Hybrid (FxNLMS + {model.name})"
 
             t_anc_start = time.perf_counter()
+            use_dual_anc = False
             if noise_norm is not None:
+                norm_a = float(np.linalg.norm(audio_norm))
+                norm_n = float(np.linalg.norm(noise_norm))
+                corr_an = 0.0
+                if norm_a > 1e-8 and norm_n > 1e-8:
+                    corr_an = float(abs(np.dot(audio_norm, noise_norm)) / (norm_a * norm_n))
+                # Crosstalk guard: reference channel must not be dominated by primary speech
+                if corr_an <= 0.60:
+                    use_dual_anc = True
+
+            if use_dual_anc:
                 # Dual-Channel / Noise-Referenced Stage 1
                 anc_cfg = FrameANCConfig(filter_length=filter_length, step_size=step_size)
                 sec_path = np.zeros(filter_length, dtype=np.float64)
@@ -837,9 +904,20 @@ class AudioProcessingPipeline:
                     canc_frame = anc.process_frame(x_chunk, d_chunk)
                     anc_frames.append(canc_frame[: min(frame_size, len(audio_norm) - i)])
                 stage1_residual = np.concatenate(anc_frames)[: len(audio_norm)]
+
+                # Residual energy safety guard: if classical ANC caused catastrophic speech collapse
+                # (residual RMS < 10% of input RMS), fall back to safe single-channel spectral pre-filter
+                res_rms = float(np.sqrt(np.mean(stage1_residual ** 2)))
+                in_rms_val = float(np.sqrt(np.mean(audio_norm ** 2)))
+                if in_rms_val > 0.01 and res_rms < 0.10 * in_rms_val:
+                    stage1_residual = self._apply_single_channel_stage1_prefilter(audio_norm, sample_rate)
+                    actual_model_name = f"Hybrid (Spectral Pre-Filter + {model.name})"
+                else:
+                    actual_model_name = f"Hybrid (FxNLMS + {model.name})"
             else:
                 # Single-Channel Stage 1: Classical 80Hz rumble cut + gentle stationary noise conditioning
                 stage1_residual = self._apply_single_channel_stage1_prefilter(audio_norm, sample_rate)
+                actual_model_name = f"Hybrid (FxNLMS + {model.name})"
 
             t_anc_total = time.perf_counter() - t_anc_start
 
