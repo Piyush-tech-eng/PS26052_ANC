@@ -108,7 +108,8 @@ pip install -e ".[export]"
 pip install -e ".[hardware]"
 
 # Complete development environment:
-pip install -e ".[full,test]"
+python -m pip install -e ".[full]"
+python -m pip install pytest
 ```
 
 > **Note for Raspberry Pi / Linux users**: Install system PortAudio headers before installing PyAudio:
@@ -219,7 +220,7 @@ python experiments/m10_01_robustness_sweep.py
 
 Execute the comprehensive test suite (342 unit and integration tests):
 ```bash
-pytest tests/ -v
+python -m pytest tests/ -v
 ```
 
 ---
